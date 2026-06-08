@@ -22,7 +22,9 @@ async def check_rate_limit(user: AuthenticatedUser) -> None:
         "user_id", user.user_id
     ).maybe_single().execute()
 
-    if result.data and result.data["count_date"] == today:
+    # maybe_single() can return None (not an object with .data) when no row
+    # exists — guard against AttributeError for brand-new users.
+    if result and result.data and result.data["count_date"] == today:
         if result.data["query_count"] >= limit:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,

@@ -47,11 +47,20 @@ def create_app() -> FastAPI:
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
         logger.error("Unhandled exception: %s", exc, exc_info=True)
-        return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+        # Surface the error type + message so production 500s are diagnosable.
+        # Safe: exposes the exception class and message, never a full traceback.
+        return JSONResponse(
+            status_code=500,
+            content={
+                "detail": "Internal server error",
+                "error_type": type(exc).__name__,
+                "error_message": str(exc)[:300],
+            },
+        )
 
     @app.get("/health", tags=["health"])
     async def health() -> dict:
-        return {"status": "ok", "service": "aboy-ai-backend", "auth": "httpx-v2"}
+        return {"status": "ok", "service": "aboy-ai-backend", "auth": "httpx-v2", "build": "v3-ratelimit"}
 
     # ── One-shot migration endpoint ──────────────────────────────────────────
     # Called once from CI/deploy tooling, protected by MIGRATION_SECRET.
