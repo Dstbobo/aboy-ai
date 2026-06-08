@@ -20,7 +20,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     const onboardingScreens = ['onboarding-role', 'onboarding-specialty'];
 
     if (!isAuthenticated && !inAuthGroup) {
-      router.replace('/(auth)/login');
+      router.replace('/(auth)/landing');
     } else if (isAuthenticated && inAuthGroup) {
       if (needsOnboarding) {
         // Only redirect if not already on an onboarding screen

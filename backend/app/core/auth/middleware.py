@@ -1,6 +1,8 @@
+import httpx
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from app.config import get_settings
 from app.db.supabase import get_db
 from app.models.user import AuthenticatedUser
 
@@ -27,31 +29,41 @@ async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
 ) -> AuthenticatedUser:
     token = credentials.credentials
+    settings = get_settings()
+
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Invalid or expired token",
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    # Use the Supabase service-role client to validate the token.
-    # This avoids needing SUPABASE_JWT_SECRET and always works as long as
-    # the token was issued by this project's Supabase Auth.
+    # Validate the token directly against Supabase Auth REST API.
+    # Works with ES256 and HS256 tokens — no JWT secret or python-jose needed.
     try:
-        db = await get_db()
-        auth_response = await db.auth.get_user(token)
-        supabase_user = auth_response.user
-        if not supabase_user:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"{settings.supabase_url}/auth/v1/user",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "apikey": settings.supabase_service_key,
+                },
+            )
+        if resp.status_code != 200:
             raise credentials_exception
+        user_data = resp.json()
     except HTTPException:
         raise
     except Exception:
         raise credentials_exception
 
-    user_id: str = supabase_user.id
-    email: str = supabase_user.email or ""
+    user_id: str = user_data.get("id", "")
+    if not user_id:
+        raise credentials_exception
+
+    email: str = user_data.get("email", "")
 
     # Role lives in app_metadata — never trust user_metadata
-    app_metadata: dict = supabase_user.app_metadata or {}
+    app_metadata: dict = user_data.get("app_metadata", {})
     role: str = app_metadata.get("role", "student_med")
     if role not in VALID_ROLES:
         role = "student_med"
@@ -59,6 +71,7 @@ async def get_current_user(
     # Fetch sub_role from user_profiles (non-fatal — sub_role is optional)
     sub_role: str | None = None
     try:
+        db = await get_db()
         result = (
             await db.table("user_profiles")
             .select("role, sub_role")
