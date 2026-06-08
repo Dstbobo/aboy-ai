@@ -1,23 +1,39 @@
 {
   "cli": {
-    "version": ">= 12.0.0"
+    "version": ">= 12.0.0",
+    "appVersionSource": "local"
   },
   "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      }
+    },
     "mvp": {
+      "distribution": "internal",
       "android": {
         "buildType": "apk",
-        "gradleCommand": ":app:assembleRelease",
-        "env": {
-          "EXPO_PUBLIC_ENV": "mvp"
-        }
+        "gradleCommand": ":app:assembleRelease"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://fantastic-possibility-production-f4fa.up.railway.app",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://szsdvkziqskrfveuemsi.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN6c2R2a3ppcXNrcmZ2ZXVlbXNpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NzI4NzIsImV4cCI6MjA5NjQ0ODg3Mn0.LV_pp_2fhO3emAC3OySvmM-Su53ymeB05jal4lMEhl4",
+        "EXPO_PUBLIC_ENV": "mvp"
       }
     },
     "production": {
+      "distribution": "store",
       "android": {
-        "buildType": "app-bundle",
-        "env": {
-          "EXPO_PUBLIC_ENV": "production"
-        }
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://fantastic-possibility-production-f4fa.up.railway.app",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://szsdvkziqskrfveuemsi.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN6c2R2a3ppcXNrcmZ2ZXVlbXNpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NzI4NzIsImV4cCI6MjA5NjQ0ODg3Mn0.LV_pp_2fhO3emAC3OySvmM-Su53ymeB05jal4lMEhl4",
+        "EXPO_PUBLIC_ENV": "production"
       }
     }
   },

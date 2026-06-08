@@ -11,7 +11,9 @@
       "resizeMode": "contain",
       "backgroundColor": "#0a5f52"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.aboyai.app"
@@ -52,8 +54,9 @@
         "origin": false
       },
       "eas": {
-        "projectId": "your-eas-project-id"
+        "projectId": "72f9ee22-4dfa-47ab-b2d4-249349f4cd91"
       }
-    }
+    },
+    "owner": "aboyai"
   }
 }
