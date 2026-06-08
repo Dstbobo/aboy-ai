@@ -74,53 +74,60 @@ def create_app() -> FastAPI:
 
         # Parse DB password from env or hard-code for one-shot use
         import socket
-        db_password  = os.environ.get("SUPABASE_DB_PASSWORD", "452345Dst@ff")
-        project_ref  = "szsdvkziqskrfveuemsi"
-        direct_host  = f"db.{project_ref}.supabase.co"
+        db_password = os.environ.get("SUPABASE_DB_PASSWORD", "452345Dst@ff")
+        project_ref = "szsdvkziqskrfveuemsi"
 
-        # Build candidate connection configs — direct + all pooler regions, IPv4 forced
+        # All Supabase regions + direct host; session pooler (5432) preferred for DDL
+        regions = [
+            "us-east-1", "us-east-2", "us-west-1", "us-west-2",
+            "eu-west-1", "eu-west-2", "eu-west-3", "eu-central-1", "eu-central-2",
+            "ap-southeast-1", "ap-southeast-2", "ap-northeast-1", "ap-northeast-2",
+            "ca-central-1", "sa-east-1", "af-south-1", "me-south-1",
+        ]
+        hosts = [
+            # Direct connection first (bypasses pooler, supports all SQL)
+            (f"db.{project_ref}.supabase.co", 5432, "postgres"),
+            # Session pooler (port 5432) for all regions — supports DDL
+            *[(f"aws-0-{r}.pooler.supabase.com", 5432, f"postgres.{project_ref}") for r in regions],
+            # Transaction pooler (port 6543) fallback — may not support DDL but worth trying
+            *[(f"aws-0-{r}.pooler.supabase.com", 6543, f"postgres.{project_ref}") for r in regions],
+        ]
+
+        # Resolve to IPv4, collect reachable candidates
         candidates = []
-        for host, port, user in [
-            (direct_host, 5432, "postgres"),
-            (direct_host, 6543, "postgres"),
-            (f"aws-0-us-east-1.pooler.supabase.com",    6543, f"postgres.{project_ref}"),
-            (f"aws-0-us-east-1.pooler.supabase.com",    5432, f"postgres.{project_ref}"),
-            (f"aws-0-eu-west-1.pooler.supabase.com",    6543, f"postgres.{project_ref}"),
-            (f"aws-0-eu-central-1.pooler.supabase.com", 6543, f"postgres.{project_ref}"),
-            (f"aws-0-ap-southeast-1.pooler.supabase.com", 6543, f"postgres.{project_ref}"),
-            (f"aws-0-us-west-2.pooler.supabase.com",    6543, f"postgres.{project_ref}"),
-        ]:
-            # Resolve to IPv4 only to avoid ENETUNREACH on IPv6-less containers
+        dns_log = {}
+        for host, port, user in hosts:
             try:
                 addrs = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
-                if addrs:
-                    ipv4 = addrs[0][4][0]
-                    candidates.append((ipv4, port, user, host))
-            except Exception:
-                pass  # hostname didn't resolve — skip
+                ipv4 = addrs[0][4][0]
+                candidates.append((ipv4, port, user, host))
+                dns_log[f"{host}:{port}"] = ipv4
+            except Exception as e:
+                dns_log[f"{host}:{port}"] = f"NORESOLVE:{e}"
 
         conn = None
-        last_err = "No candidates resolved"
+        attempts = []
         for ipv4, port, user, orig_host in candidates:
             try:
                 conn = await asyncpg.connect(
-                    host=ipv4,
-                    port=port,
-                    user=user,
-                    password=db_password,
-                    database="postgres",
-                    ssl="require",
-                    server_settings={"host": orig_host},
-                    timeout=15,
+                    host=ipv4, port=port, user=user,
+                    password=db_password, database="postgres",
+                    ssl="require", timeout=12,
                 )
-                logger.info("DB connected via %s:%s (resolved %s)", orig_host, port, ipv4)
+                logger.info("DB connected via %s:%s", orig_host, port)
+                attempts.append({"host": f"{orig_host}:{port}", "result": "CONNECTED"})
                 break
             except Exception as e:
-                last_err = f"{orig_host}:{port} -> {e}"
-                logger.warning("DB attempt failed: %s", last_err)
+                err = str(e)[:120]
+                attempts.append({"host": f"{orig_host}:{port}", "result": err})
+                logger.warning("DB attempt %s:%s failed: %s", orig_host, port, err)
 
         if conn is None:
-            raise HTTPException(status_code=500, detail=f"DB connection failed: {last_err}")
+            raise HTTPException(status_code=500, detail={
+                "error": "All DB connections failed",
+                "attempts": attempts[:20],
+                "dns_resolved": {k: v for k, v in dns_log.items() if not v.startswith("NORESOLVE")},
+            })
 
         try:
             await conn.execute(sql)
