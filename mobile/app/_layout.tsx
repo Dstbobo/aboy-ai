@@ -9,19 +9,29 @@ import { lightTheme, darkTheme } from '@/constants/theme';
 import { useOffline } from '@/hooks/useOffline';
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuthStore();
+  const { isAuthenticated, isLoading, needsOnboarding } = useAuthStore();
   const segments = useSegments();
   const router = useRouter();
 
   useEffect(() => {
     if (isLoading) return;
     const inAuthGroup = segments[0] === '(auth)';
+    const currentScreen = segments[1] as string | undefined;
+    const onboardingScreens = ['onboarding-role', 'onboarding-specialty'];
+
     if (!isAuthenticated && !inAuthGroup) {
       router.replace('/(auth)/login');
     } else if (isAuthenticated && inAuthGroup) {
-      router.replace('/(clinical)/chat');
+      if (needsOnboarding) {
+        // Only redirect if not already on an onboarding screen
+        if (!onboardingScreens.includes(currentScreen ?? '')) {
+          router.replace('/(auth)/onboarding-role');
+        }
+      } else {
+        router.replace('/(clinical)/chat');
+      }
     }
-  }, [isAuthenticated, isLoading, segments]);
+  }, [isAuthenticated, isLoading, needsOnboarding, segments]);
 
   return <>{children}</>;
 }

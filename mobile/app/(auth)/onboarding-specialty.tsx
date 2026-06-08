@@ -13,7 +13,7 @@ export default function OnboardingSpecialtyScreen() {
   const { role } = useLocalSearchParams<{ role: UserRole }>();
   const [selected, setSelected] = useState<string | null>(null);
   const [loading, setLoading]   = useState(false);
-  const { updateRoleInfo }      = useAuthStore();
+  const { updateRoleInfo, completeOnboarding } = useAuthStore();
   const router = useRouter();
 
   const specialties = ROLE_SPECIALTIES[role] ?? [];
@@ -28,8 +28,9 @@ export default function OnboardingSpecialtyScreen() {
     } catch {
       // Non-fatal — still proceed to home
     }
-    // Update local store
+    // Update local store and mark onboarding complete
     await updateRoleInfo(role, selected);
+    await completeOnboarding();
     setLoading(false);
     // Navigate to home — onboarding complete
     router.replace('/(clinical)/chat');

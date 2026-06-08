@@ -1,8 +1,6 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt
 
-from app.config import Settings, get_settings
 from app.db.supabase import get_db
 from app.models.user import AuthenticatedUser
 
@@ -27,7 +25,6 @@ VALID_ROLES = {
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
-    settings: Settings = Depends(get_settings),
 ) -> AuthenticatedUser:
     token = credentials.credentials
     credentials_exception = HTTPException(
@@ -36,36 +33,32 @@ async def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
+    # Use the Supabase service-role client to validate the token.
+    # This avoids needing SUPABASE_JWT_SECRET and always works as long as
+    # the token was issued by this project's Supabase Auth.
     try:
-        # Supabase JWTs are signed with SUPABASE_JWT_SECRET (HS256)
-        # Fall back to anon_key if jwt_secret not configured (dev/testing only)
-        signing_key = settings.supabase_jwt_secret or settings.supabase_anon_key
-        payload = jwt.decode(
-            token,
-            signing_key,
-            algorithms=["HS256"],
-            options={"verify_aud": False},
-        )
-    except JWTError:
+        db = await get_db()
+        auth_response = await db.auth.get_user(token)
+        supabase_user = auth_response.user
+        if not supabase_user:
+            raise credentials_exception
+    except HTTPException:
+        raise
+    except Exception:
         raise credentials_exception
 
-    user_id: str | None = payload.get("sub")
-    if not user_id:
-        raise credentials_exception
+    user_id: str = supabase_user.id
+    email: str = supabase_user.email or ""
 
     # Role lives in app_metadata — never trust user_metadata
-    app_metadata: dict = payload.get("app_metadata", {})
+    app_metadata: dict = supabase_user.app_metadata or {}
     role: str = app_metadata.get("role", "student_med")
-
     if role not in VALID_ROLES:
         role = "student_med"
-
-    email: str = payload.get("email", "")
 
     # Fetch sub_role from user_profiles (non-fatal — sub_role is optional)
     sub_role: str | None = None
     try:
-        db = await get_db()
         result = (
             await db.table("user_profiles")
             .select("role, sub_role")
@@ -73,7 +66,7 @@ async def get_current_user(
             .maybe_single()
             .execute()
         )
-        if result.data:
+        if result and result.data:
             profile_role = result.data.get("role")
             if profile_role and profile_role in VALID_ROLES:
                 role = profile_role
