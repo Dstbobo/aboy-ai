@@ -1,28 +1,25 @@
--- ===== 001_initial_schema.sql =====
 -- ============================================================
--- Aboy AI — Initial Schema
--- Migration: 001_initial_schema.sql
--- Run via: psql $DATABASE_URL -f 001_initial_schema.sql
+-- ABOY AI -- Complete Migration Script
+-- Paste this entire file into Supabase SQL Editor and click RUN
+-- Dashboard: https://supabase.com/dashboard/project/szsdvkziqskrfveuemsi/sql/new
 -- ============================================================
 
+-- Extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "vector";
-CREATE EXTENSION IF NOT EXISTS "pg_cron";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+DO $$ BEGIN
+  CREATE EXTENSION IF NOT EXISTS "pg_cron";
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'pg_cron not available on this plan -- skipping';
+END $$;
 
--- ─── User Profiles ───────────────────────────────────────────
+-- User Profiles
 CREATE TABLE IF NOT EXISTS user_profiles (
     id                  UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     email               TEXT NOT NULL,
     full_name           TEXT,
-    role                TEXT NOT NULL DEFAULT 'student_med'
-                        CHECK (role IN (
-                            'admin', 'educator',
-                            'pro_senior', 'pro_junior', 'pro_nurse',
-                            'student_med', 'student_nurse', 'student_allied',
-                            'receptionist', 'cashier', 'pharmacist',
-                            'lab_technician', 'ward_nurse_manager', 'patient'
-                        )),
+    role                TEXT NOT NULL DEFAULT 'student_med',
     role_verified       BOOLEAN DEFAULT FALSE,
     verification_status TEXT DEFAULT 'pending'
                         CHECK (verification_status IN ('pending', 'approved', 'rejected', 'expired')),
@@ -33,39 +30,47 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     graduation_year     INT,
     license_expiry      DATE,
     preferred_language  TEXT DEFAULT 'en',
+    push_token          TEXT,
     is_active           BOOLEAN DEFAULT TRUE,
     last_active_at      TIMESTAMPTZ,
     created_at          TIMESTAMPTZ DEFAULT NOW(),
     updated_at          TIMESTAMPTZ DEFAULT NOW()
 );
 
+ALTER TABLE user_profiles DROP CONSTRAINT IF EXISTS user_profiles_role_check;
+ALTER TABLE user_profiles ADD CONSTRAINT user_profiles_role_check CHECK (role IN (
+  'student_med','student_nurse','student_midwifery','student_community_health',
+  'student_pharmacy','student_dental','student_physio','student_radiography',
+  'student_med_lab','student_biomedical','student_optometry','student_nutrition',
+  'student_ot','student_health_info','student_env_health','student_slt',
+  'pro_junior','pro_senior','pro_nurse','pro_midwife','pro_community_health',
+  'pro_pharmacist','pro_paramedic','pro_public_health','pro_dental','pro_physio',
+  'pro_radiographer','pro_med_lab','pro_optometrist','pro_nutritionist',
+  'pro_ot','pro_health_info','pro_env_health','pro_slt',
+  'educator','admin'
+));
+
 ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can read own profile"           ON user_profiles;
+DROP POLICY IF EXISTS "Users can update own profile"         ON user_profiles;
+DROP POLICY IF EXISTS "Admins can read all profiles"         ON user_profiles;
+
 CREATE POLICY "Users can read own profile"
-    ON user_profiles FOR SELECT
-    USING (auth.uid() = id);
+    ON user_profiles FOR SELECT USING (auth.uid() = id);
 
 CREATE POLICY "Users can update own profile"
-    ON user_profiles FOR UPDATE
-    USING (auth.uid() = id)
-    WITH CHECK (auth.uid() = id);
+    ON user_profiles FOR UPDATE USING (auth.uid() = id) WITH CHECK (auth.uid() = id);
 
 CREATE POLICY "Admins can read all profiles"
     ON user_profiles FOR SELECT
-    USING (
-        (auth.jwt() -> 'app_metadata' ->> 'role') = 'admin'
-    );
+    USING ((auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
 
--- Auto-create profile on signup
 CREATE OR REPLACE FUNCTION handle_new_user()
 RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER AS $$
 BEGIN
     INSERT INTO user_profiles (id, email, role)
-    VALUES (
-        NEW.id,
-        NEW.email,
-        COALESCE(NEW.raw_app_meta_data->>'role', 'student_med')
-    )
+    VALUES (NEW.id, NEW.email, COALESCE(NEW.raw_app_meta_data->>'role', 'student_med'))
     ON CONFLICT (id) DO NOTHING;
     RETURN NEW;
 END;
@@ -76,21 +81,21 @@ CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW EXECUTE FUNCTION handle_new_user();
 
--- ─── Knowledge Sources ───────────────────────────────────────
+CREATE INDEX IF NOT EXISTS idx_user_profiles_sub_role ON user_profiles(sub_role);
+
+-- Knowledge Sources
 CREATE TABLE IF NOT EXISTS knowledge_sources (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name                TEXT NOT NULL,
     source_type         TEXT NOT NULL CHECK (source_type IN (
                             'pubmed','who','cdc','nice','cochrane',
-                            'textbook','guideline','journal','custom','web'
-                        )),
+                            'textbook','guideline','journal','custom','web')),
     url                 TEXT,
     evidence_grade      TEXT CHECK (evidence_grade IN ('A','B','C','D','expert_opinion')),
     specialty_tags      TEXT[],
     publication_date    DATE,
     ingestion_status    TEXT DEFAULT 'pending' CHECK (ingestion_status IN (
-                            'pending','processing','completed','failed','outdated'
-                        )),
+                            'pending','processing','completed','failed','outdated')),
     chunk_count         INT DEFAULT 0,
     is_active           BOOLEAN DEFAULT TRUE,
     added_by            UUID REFERENCES user_profiles(id),
@@ -98,16 +103,16 @@ CREATE TABLE IF NOT EXISTS knowledge_sources (
 );
 
 ALTER TABLE knowledge_sources ENABLE ROW LEVEL SECURITY;
-
+DROP POLICY IF EXISTS "Admins manage knowledge sources"             ON knowledge_sources;
+DROP POLICY IF EXISTS "Authenticated users can read active sources" ON knowledge_sources;
 CREATE POLICY "Admins manage knowledge sources"
     ON knowledge_sources FOR ALL
     USING ((auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
-
 CREATE POLICY "Authenticated users can read active sources"
     ON knowledge_sources FOR SELECT
     USING (is_active = TRUE AND auth.role() = 'authenticated');
 
--- ─── Knowledge Chunks ────────────────────────────────────────
+-- Knowledge Chunks (pgvector 1024-dim)
 CREATE TABLE IF NOT EXISTS knowledge_chunks (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     source_id       UUID NOT NULL REFERENCES knowledge_sources(id) ON DELETE CASCADE,
@@ -123,43 +128,31 @@ CREATE TABLE IF NOT EXISTS knowledge_chunks (
 );
 
 ALTER TABLE knowledge_chunks ENABLE ROW LEVEL SECURITY;
-
+DROP POLICY IF EXISTS "Admins manage chunks"                ON knowledge_chunks;
+DROP POLICY IF EXISTS "Authenticated users can read chunks" ON knowledge_chunks;
 CREATE POLICY "Admins manage chunks"
     ON knowledge_chunks FOR ALL
     USING ((auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
-
 CREATE POLICY "Authenticated users can read chunks"
     ON knowledge_chunks FOR SELECT
     USING (auth.role() = 'authenticated');
 
--- HNSW index for fast ANN search
 CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_embedding
-    ON knowledge_chunks
-    USING hnsw (embedding vector_cosine_ops)
+    ON knowledge_chunks USING hnsw (embedding vector_cosine_ops)
     WITH (m = 16, ef_construction = 64);
 
--- Similarity search function
 CREATE OR REPLACE FUNCTION match_knowledge_chunks(
     query_embedding VECTOR(1024),
     match_threshold FLOAT DEFAULT 0.65,
     match_count     INT DEFAULT 10
 )
 RETURNS TABLE (
-    id            UUID,
-    content       TEXT,
-    metadata      JSONB,
-    source_id     UUID,
-    section_title TEXT,
-    similarity    FLOAT
+    id UUID, content TEXT, metadata JSONB,
+    source_id UUID, section_title TEXT, similarity FLOAT
 )
 LANGUAGE SQL STABLE AS $$
-    SELECT
-        kc.id,
-        kc.content,
-        kc.metadata,
-        kc.source_id,
-        kc.section_title,
-        1 - (kc.embedding <=> query_embedding) AS similarity
+    SELECT kc.id, kc.content, kc.metadata, kc.source_id, kc.section_title,
+           1 - (kc.embedding <=> query_embedding) AS similarity
     FROM knowledge_chunks kc
     JOIN knowledge_sources ks ON ks.id = kc.source_id
     WHERE 1 - (kc.embedding <=> query_embedding) > match_threshold
@@ -168,7 +161,7 @@ LANGUAGE SQL STABLE AS $$
     LIMIT match_count;
 $$;
 
--- ─── Query Sessions ──────────────────────────────────────────
+-- Query Sessions
 CREATE TABLE IF NOT EXISTS query_sessions (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id         UUID NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
@@ -180,58 +173,53 @@ CREATE TABLE IF NOT EXISTS query_sessions (
 );
 
 ALTER TABLE query_sessions ENABLE ROW LEVEL SECURITY;
-
+DROP POLICY IF EXISTS "Users manage own sessions" ON query_sessions;
 CREATE POLICY "Users manage own sessions"
-    ON query_sessions FOR ALL
-    USING (auth.uid() = user_id);
+    ON query_sessions FOR ALL USING (auth.uid() = user_id);
 
--- ─── Audit Log (append-only, NEVER update or delete) ─────────
+-- Audit Log (append-only -- no UPDATE/DELETE policies)
 CREATE TABLE IF NOT EXISTS query_audit_log (
-    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id             UUID NOT NULL,
-    user_role           TEXT NOT NULL,
-    session_id          UUID REFERENCES query_sessions(id),
-    query_raw           TEXT NOT NULL,
-    query_enhanced      TEXT,
+    id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id              UUID NOT NULL,
+    user_role            TEXT NOT NULL,
+    session_id           UUID REFERENCES query_sessions(id),
+    query_raw            TEXT NOT NULL,
+    query_enhanced       TEXT,
     query_classification TEXT,
-    sources_retrieved   JSONB DEFAULT '[]',
-    sources_cited       JSONB DEFAULT '[]',
-    response_text       TEXT NOT NULL,
-    model_used          TEXT NOT NULL,
-    tokens_input        INT,
-    tokens_output       INT,
-    latency_ms          INT,
-    safety_flags        TEXT[] DEFAULT '{}',
-    emergency_triggered BOOLEAN DEFAULT FALSE,
-    flagged_for_review  BOOLEAN DEFAULT FALSE,
-    ip_hash             TEXT,
-    created_at          TIMESTAMPTZ DEFAULT NOW()
+    sources_retrieved    JSONB DEFAULT '[]',
+    sources_cited        JSONB DEFAULT '[]',
+    response_text        TEXT NOT NULL,
+    model_used           TEXT NOT NULL,
+    tokens_input         INT,
+    tokens_output        INT,
+    latency_ms           INT,
+    safety_flags         TEXT[] DEFAULT '{}',
+    emergency_triggered  BOOLEAN DEFAULT FALSE,
+    flagged_for_review   BOOLEAN DEFAULT FALSE,
+    ip_hash              TEXT,
+    created_at           TIMESTAMPTZ DEFAULT NOW()
 );
 
 ALTER TABLE query_audit_log ENABLE ROW LEVEL SECURITY;
-
--- Insert only — NO update or delete policies ever
+DROP POLICY IF EXISTS "Service role inserts audit logs" ON query_audit_log;
+DROP POLICY IF EXISTS "Admins read audit logs"          ON query_audit_log;
+DROP POLICY IF EXISTS "Users read own audit logs"       ON query_audit_log;
 CREATE POLICY "Service role inserts audit logs"
-    ON query_audit_log FOR INSERT
-    WITH CHECK (TRUE);
-
+    ON query_audit_log FOR INSERT WITH CHECK (TRUE);
 CREATE POLICY "Admins read audit logs"
     ON query_audit_log FOR SELECT
     USING ((auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
-
 CREATE POLICY "Users read own audit logs"
-    ON query_audit_log FOR SELECT
-    USING (auth.uid() = user_id);
+    ON query_audit_log FOR SELECT USING (auth.uid() = user_id);
 
--- ─── Safety Flags ────────────────────────────────────────────
+-- Safety Flags
 CREATE TABLE IF NOT EXISTS safety_flags (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     audit_log_id    UUID NOT NULL REFERENCES query_audit_log(id),
     user_id         UUID NOT NULL,
     flag_type       TEXT NOT NULL CHECK (flag_type IN (
                         'emergency_query','out_of_scope','potential_harm',
-                        'hallucination_suspected','role_mismatch','quality_concern'
-                    )),
+                        'hallucination_suspected','role_mismatch','quality_concern')),
     flag_source     TEXT NOT NULL CHECK (flag_source IN ('automatic','user_report','admin')),
     status          TEXT DEFAULT 'open' CHECK (status IN ('open','reviewing','resolved','escalated')),
     resolved_by     UUID REFERENCES user_profiles(id),
@@ -240,12 +228,12 @@ CREATE TABLE IF NOT EXISTS safety_flags (
 );
 
 ALTER TABLE safety_flags ENABLE ROW LEVEL SECURITY;
-
+DROP POLICY IF EXISTS "Admins manage safety flags" ON safety_flags;
 CREATE POLICY "Admins manage safety flags"
     ON safety_flags FOR ALL
     USING ((auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
 
--- ─── Rate Limits ─────────────────────────────────────────────
+-- Rate Limit Counters
 CREATE TABLE IF NOT EXISTS rate_limit_counters (
     user_id     UUID PRIMARY KEY REFERENCES user_profiles(id) ON DELETE CASCADE,
     count_date  DATE NOT NULL DEFAULT CURRENT_DATE,
@@ -254,19 +242,20 @@ CREATE TABLE IF NOT EXISTS rate_limit_counters (
 );
 
 ALTER TABLE rate_limit_counters ENABLE ROW LEVEL SECURITY;
-
+DROP POLICY IF EXISTS "Service role manages rate limits" ON rate_limit_counters;
 CREATE POLICY "Service role manages rate limits"
-    ON rate_limit_counters FOR ALL
-    USING (TRUE);
+    ON rate_limit_counters FOR ALL USING (TRUE);
 
--- Reset daily at midnight UTC
-SELECT cron.schedule(
-    'reset-rate-limits',
-    '0 0 * * *',
+DO $$ BEGIN
+  PERFORM cron.schedule(
+    'reset-rate-limits', '0 0 * * *',
     'DELETE FROM rate_limit_counters WHERE count_date < CURRENT_DATE'
-);
+  );
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'pg_cron job skipped: %', SQLERRM;
+END $$;
 
--- ─── Feedback ────────────────────────────────────────────────
+-- Feedback
 CREATE TABLE IF NOT EXISTS query_feedback (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     audit_log_id    UUID NOT NULL REFERENCES query_audit_log(id),
@@ -279,84 +268,19 @@ CREATE TABLE IF NOT EXISTS query_feedback (
 );
 
 ALTER TABLE query_feedback ENABLE ROW LEVEL SECURITY;
-
+DROP POLICY IF EXISTS "Users submit own feedback" ON query_feedback;
+DROP POLICY IF EXISTS "Users read own feedback"   ON query_feedback;
+DROP POLICY IF EXISTS "Admins read all feedback"  ON query_feedback;
 CREATE POLICY "Users submit own feedback"
-    ON query_feedback FOR INSERT
-    WITH CHECK (auth.uid() = user_id);
-
+    ON query_feedback FOR INSERT WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Users read own feedback"
-    ON query_feedback FOR SELECT
-    USING (auth.uid() = user_id);
-
+    ON query_feedback FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "Admins read all feedback"
     ON query_feedback FOR SELECT
     USING ((auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
 
-
--- ===== 002_push_tokens.sql =====
--- Migration 002 — add push_token column to user_profiles
-ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS push_token TEXT;
-
-
--- ===== 003_expanded_roles.sql =====
--- Migration 003: Expand role constraint + add sub_role column
--- Run after 001_initial_schema.sql
-
--- 1. Add sub_role column if not present
-ALTER TABLE user_profiles
-  ADD COLUMN IF NOT EXISTS sub_role TEXT;
-
--- 2. Drop the existing role CHECK constraint (name may vary; drop by constraint name or recreate)
-ALTER TABLE user_profiles
-  DROP CONSTRAINT IF EXISTS user_profiles_role_check;
-
--- 3. Add updated CHECK constraint covering all 34 role IDs + system roles
-ALTER TABLE user_profiles
-  ADD CONSTRAINT user_profiles_role_check CHECK (role IN (
-    -- Students (16)
-    'student_med',
-    'student_nurse',
-    'student_midwifery',
-    'student_community_health',
-    'student_pharmacy',
-    'student_dental',
-    'student_physio',
-    'student_radiography',
-    'student_med_lab',
-    'student_biomedical',
-    'student_optometry',
-    'student_nutrition',
-    'student_ot',
-    'student_health_info',
-    'student_env_health',
-    'student_slt',
-    -- Professionals (18)
-    'pro_junior',
-    'pro_senior',
-    'pro_nurse',
-    'pro_midwife',
-    'pro_community_health',
-    'pro_pharmacist',
-    'pro_paramedic',
-    'pro_public_health',
-    'pro_dental',
-    'pro_physio',
-    'pro_radiographer',
-    'pro_med_lab',
-    'pro_optometrist',
-    'pro_nutritionist',
-    'pro_ot',
-    'pro_health_info',
-    'pro_env_health',
-    'pro_slt',
-    -- System roles
-    'educator',
-    'admin'
-  ));
-
--- 4. Add index on sub_role for analytics queries
-CREATE INDEX IF NOT EXISTS idx_user_profiles_sub_role ON user_profiles(sub_role);
-
--- 5. Update RLS — sub_role follows same pattern as existing columns (users own their row)
--- Existing policies already cover all columns via the UPDATE policy on user_profiles.
--- No new policy needed.
+-- Verify: show all created tables
+SELECT table_name
+FROM information_schema.tables
+WHERE table_schema = 'public'
+ORDER BY table_name;
