@@ -228,7 +228,7 @@ async def seed_knowledge_base() -> None:
         content = source.pop("content")
 
         existing = await db.table("knowledge_sources").select("id").eq("name", source["name"]).maybe_single().execute()
-        if existing.data:
+        if existing and existing.data:
             logger.info("  SKIP (exists): %s", source["name"])
             source["content"] = content
             continue

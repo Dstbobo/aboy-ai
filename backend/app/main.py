@@ -100,13 +100,16 @@ def create_app() -> FastAPI:
         # ── 2. Regional poolers via IPv4 (fallback) ──
         if conn is None:
             regions = [
+                # Try known working region first, then others
+                "eu-central-1",
                 "us-east-1", "us-east-2", "us-west-1", "us-west-2",
-                "eu-west-1", "eu-west-2", "eu-central-1",
+                "eu-west-1", "eu-west-2",
                 "ap-southeast-1", "ap-northeast-1", "ca-central-1",
             ]
             for region in regions:
-                for port in [5432, 6543]:
-                    host = f"aws-0-{region}.pooler.supabase.com"
+                for port in [6543, 5432]:
+                    # Try both aws-1 and aws-0 prefixes (newer projects use aws-1)
+                    host = f"aws-1-{region}.pooler.supabase.com"
                     user = f"postgres.{project_ref}"
                     try:
                         addrs = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
