@@ -55,6 +55,10 @@ ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Users can read own profile"           ON user_profiles;
 DROP POLICY IF EXISTS "Users can update own profile"         ON user_profiles;
 DROP POLICY IF EXISTS "Admins can read all profiles"         ON user_profiles;
+DROP POLICY IF EXISTS "Service role can insert profiles"     ON user_profiles;
+
+CREATE POLICY "Service role can insert profiles"
+    ON user_profiles FOR INSERT WITH CHECK (TRUE);
 
 CREATE POLICY "Users can read own profile"
     ON user_profiles FOR SELECT USING (auth.uid() = id);
@@ -67,11 +71,19 @@ CREATE POLICY "Admins can read all profiles"
     USING ((auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
 
 CREATE OR REPLACE FUNCTION handle_new_user()
-RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER AS $$
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 BEGIN
-    INSERT INTO user_profiles (id, email, role)
-    VALUES (NEW.id, NEW.email, COALESCE(NEW.raw_app_meta_data->>'role', 'student_med'))
+    INSERT INTO public.user_profiles (id, email, role, full_name)
+    VALUES (
+        NEW.id,
+        NEW.email,
+        COALESCE(NEW.raw_app_meta_data->>'role', 'student_med'),
+        COALESCE(NEW.raw_user_meta_data->>'full_name', NULL)
+    )
     ON CONFLICT (id) DO NOTHING;
+    RETURN NEW;
+EXCEPTION WHEN OTHERS THEN
+    RAISE WARNING 'handle_new_user error: %', SQLERRM;
     RETURN NEW;
 END;
 $$;
