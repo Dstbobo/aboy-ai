@@ -15,6 +15,10 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (isLoading) return;
+    // The root index route ("/") owns the initial redirect. Skip the guard
+    // there so it doesn't race with the <Redirect> in app/index.tsx.
+    if (segments.length === 0) return;
+
     const inAuthGroup = segments[0] === '(auth)';
     const currentScreen = segments[1] as string | undefined;
     const onboardingScreens = ['onboarding-role', 'onboarding-specialty'];
@@ -57,6 +61,7 @@ export default function RootLayout() {
         <NetworkWatcher />
         <AuthGuard>
           <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="index" />
             <Stack.Screen name="(auth)" />
             <Stack.Screen name="(clinical)" />
             <Stack.Screen name="(admin)" />
