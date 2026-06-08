@@ -10,7 +10,7 @@ import { useOffline } from '@/hooks/useOffline';
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading, needsOnboarding } = useAuthStore();
-  const segments = useSegments();
+  const segments = useSegments() as string[];
   const router = useRouter();
 
   useEffect(() => {

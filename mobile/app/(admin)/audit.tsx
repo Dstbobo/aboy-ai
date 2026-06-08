@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, FlatList, StyleSheet } from 'react-native';
 import { Text, Card, Chip, ActivityIndicator } from 'react-native-paper';
 import { api } from '@/services/api';
+import { AppScreen } from '@/components/layout/AppScreen';
 import { COLORS } from '@/constants/theme';
 
 interface AuditEntry {
@@ -29,9 +30,16 @@ export default function AuditScreen() {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <ActivityIndicator style={styles.center} color={COLORS.primary} />;
+  if (loading) {
+    return (
+      <AppScreen title="Audit Log">
+        <ActivityIndicator style={styles.center} color={COLORS.primary} />
+      </AppScreen>
+    );
+  }
 
   return (
+    <AppScreen title="Audit Log">
     <FlatList
       data={entries}
       keyExtractor={(e) => e.id}
@@ -66,6 +74,7 @@ export default function AuditScreen() {
         </Card>
       )}
     />
+    </AppScreen>
   );
 }
 

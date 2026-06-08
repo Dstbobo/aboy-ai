@@ -5,13 +5,13 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
-  TextInput as RNTextInput,
+  Text,
 } from 'react-native';
-import { IconButton, Text } from 'react-native-paper';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { OfflineBanner } from '@/components/shared/OfflineBanner';
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton';
+import { AppScreen } from '@/components/layout/AppScreen';
+import { ChatInputBar } from '@/components/layout/ChatInputBar';
 import { useChatStore } from '@/stores/chat.store';
 import { useOfflineStore } from '@/stores/offline.store';
 import { sendQuery } from '@/services/query.service';
@@ -23,9 +23,16 @@ import type { UserRole } from '@/constants/roles';
 export default function ChatScreen() {
   const [input, setInput] = useState('');
   const listRef = useRef<FlatList>(null);
-  const insets = useSafeAreaInsets();
   const user = useAuthStore((s) => s.user);
-  const { messages, sessionId, isLoading, setLoading, addUserMessage, addAssistantMessage, setSession } = useChatStore();
+  const {
+    messages,
+    sessionId,
+    isLoading,
+    setLoading,
+    addUserMessage,
+    addAssistantMessage,
+    setSession,
+  } = useChatStore();
   const { isOffline, enqueueQuery } = useOfflineStore();
 
   const scrollToBottom = useCallback(() => {
@@ -50,7 +57,12 @@ export default function ChatScreen() {
     try {
       const result = await sendQuery(text, sessionId);
       if (!sessionId) setSession(result.session_id);
-      addAssistantMessage(result.session_id + Date.now(), result.answer, result.citations, result.emergency_triggered);
+      addAssistantMessage(
+        result.session_id + Date.now(),
+        result.answer,
+        result.citations,
+        result.emergency_triggered,
+      );
       scrollToBottom();
     } catch (e: any) {
       addAssistantMessage('err' + Date.now(), 'Sorry, I encountered an error. Please try again.', [], false);
@@ -62,68 +74,66 @@ export default function ChatScreen() {
   const roleLabel = ROLE_LABELS[user?.role as UserRole] ?? 'Student';
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-    >
-      <OfflineBanner />
+    <AppScreen withPlusSheet>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
+      >
+        <OfflineBanner />
 
-      {messages.length === 0 && (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyIcon}>🏥</Text>
-          <Text style={styles.emptyTitle}>Aboy AI</Text>
-          <Text style={styles.emptySubtitle}>
-            Ask any healthcare or study question.{'\n'}All answers are cited from verified sources.
-          </Text>
-          <View style={styles.roleChip}>
-            <Text style={styles.roleText}>{roleLabel}</Text>
+        {messages.length === 0 ? (
+          <View style={styles.emptyState}>
+            <View style={styles.emptyLogo}>
+              <Text style={styles.emptyLogoLetter}>A</Text>
+            </View>
+            <Text style={styles.emptyTitle}>How can I help?</Text>
+            <Text style={styles.emptySubtitle}>
+              Ask any healthcare or study question.{'\n'}Every answer is cited from verified sources.
+            </Text>
+            <View style={styles.roleChip}>
+              <Text style={styles.roleText}>{roleLabel}</Text>
+            </View>
           </View>
-        </View>
-      )}
+        ) : (
+          <FlatList
+            ref={listRef}
+            data={messages}
+            keyExtractor={(m) => m.id}
+            renderItem={({ item }) => <MessageBubble message={item} />}
+            contentContainerStyle={styles.list}
+            onContentSizeChange={scrollToBottom}
+          />
+        )}
 
-      <FlatList
-        ref={listRef}
-        data={messages}
-        keyExtractor={(m) => m.id}
-        renderItem={({ item }) => <MessageBubble message={item} />}
-        contentContainerStyle={styles.list}
-        onContentSizeChange={scrollToBottom}
-      />
+        {isLoading && <LoadingSkeleton />}
 
-      {isLoading && <LoadingSkeleton />}
-
-      <View style={[styles.inputRow, { paddingBottom: insets.bottom + 4 }]}>
-        <RNTextInput
+        <ChatInputBar
           value={input}
           onChangeText={setInput}
-          placeholder="Ask a healthcare question…"
-          placeholderTextColor={COLORS.textSecondary}
-          style={styles.textInput}
-          multiline
-          maxLength={2000}
-          onSubmitEditing={handleSend}
-          blurOnSubmit={false}
+          onSend={handleSend}
+          disabled={isLoading}
         />
-        <IconButton
-          icon="send"
-          size={24}
-          iconColor="#fff"
-          containerColor={input.trim() ? COLORS.primary : COLORS.border}
-          onPress={handleSend}
-          disabled={!input.trim() || isLoading}
-        />
-      </View>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: COLORS.background },
+  flex: { flex: 1, backgroundColor: '#ffffff' },
   list: { padding: 16, paddingBottom: 8 },
   emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
-  emptyIcon: { fontSize: 56, marginBottom: 12 },
-  emptyTitle: { fontSize: 24, fontWeight: '800', color: COLORS.primary, marginBottom: 8 },
+  emptyLogo: {
+    width: 64,
+    height: 64,
+    borderRadius: 18,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 18,
+  },
+  emptyLogoLetter: { color: '#fff', fontSize: 36, fontWeight: '800' },
+  emptyTitle: { fontSize: 24, fontWeight: '800', color: COLORS.text, marginBottom: 10 },
   emptySubtitle: {
     fontSize: 15,
     color: COLORS.textSecondary,
@@ -138,26 +148,4 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   roleText: { color: COLORS.primary, fontWeight: '600', fontSize: 13 },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    paddingHorizontal: 12,
-    paddingTop: 8,
-    backgroundColor: COLORS.surface,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-    gap: 4,
-  },
-  textInput: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    fontSize: 15,
-    color: COLORS.text,
-    maxHeight: 120,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
 });

@@ -18,6 +18,7 @@ interface AuthState {
   needsOnboarding: boolean;
   setAuth: (user: User, token: string) => Promise<void>;
   completeOnboarding: () => Promise<void>;
+  beginOnboarding: () => Promise<void>;
   updateRoleInfo: (role: UserRole, subRole: string) => Promise<void>;
   clearAuth: () => Promise<void>;
   loadFromStorage: () => Promise<void>;
@@ -44,6 +45,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   completeOnboarding: async () => {
     await SecureStore.deleteItemAsync(ONBOARDING_KEY);
     set({ needsOnboarding: false });
+  },
+
+  // Used by "Change Role" — re-enters the onboarding flow for an already
+  // authenticated user so the AuthGuard permits the onboarding screens.
+  beginOnboarding: async () => {
+    await SecureStore.setItemAsync(ONBOARDING_KEY, 'true');
+    set({ needsOnboarding: true });
   },
 
   updateRoleInfo: async (role, subRole) => {

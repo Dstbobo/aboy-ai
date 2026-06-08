@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, FlatList, StyleSheet } from 'react-native';
 import { Text, Card, Chip, ActivityIndicator } from 'react-native-paper';
 import { api } from '@/services/api';
+import { AppScreen } from '@/components/layout/AppScreen';
 import { COLORS } from '@/constants/theme';
 import { ROLE_LABELS, type UserRole } from '@/constants/roles';
 
@@ -28,10 +29,23 @@ export default function UsersScreen() {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <ActivityIndicator style={styles.center} color={COLORS.primary} />;
-  if (error) return <View style={styles.center}><Text style={styles.error}>{error}</Text></View>;
+  if (loading) {
+    return (
+      <AppScreen title="Users">
+        <ActivityIndicator style={styles.center} color={COLORS.primary} />
+      </AppScreen>
+    );
+  }
+  if (error) {
+    return (
+      <AppScreen title="Users">
+        <View style={styles.center}><Text style={styles.error}>{error}</Text></View>
+      </AppScreen>
+    );
+  }
 
   return (
+    <AppScreen title="Users">
     <FlatList
       data={users}
       keyExtractor={(u) => u.id}
@@ -65,6 +79,7 @@ export default function UsersScreen() {
         </Card>
       )}
     />
+    </AppScreen>
   );
 }
 

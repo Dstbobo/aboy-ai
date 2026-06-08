@@ -1,43 +1,44 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { View, FlatList, StyleSheet } from 'react-native';
 import { Text, Card, Chip } from 'react-native-paper';
 import { useChatStore } from '@/stores/chat.store';
+import { AppScreen } from '@/components/layout/AppScreen';
 import { COLORS } from '@/constants/theme';
 
 export default function HistoryScreen() {
   const messages = useChatStore((s) => s.messages.filter((m) => m.role === 'user'));
 
-  if (messages.length === 0) {
-    return (
-      <View style={styles.empty}>
-        <Text style={styles.emptyIcon}>📋</Text>
-        <Text style={styles.emptyTitle}>No history yet</Text>
-        <Text style={styles.emptyBody}>Your queries will appear here after your first chat.</Text>
-      </View>
-    );
-  }
-
   return (
-    <FlatList
-      data={[...messages].reverse()}
-      keyExtractor={(m) => m.id}
-      contentContainerStyle={styles.list}
-      renderItem={({ item }) => (
-        <Card style={styles.card} mode="outlined">
-          <Card.Content>
-            <Text style={styles.query} numberOfLines={3}>{item.content}</Text>
-            <Text style={styles.time}>
-              {item.timestamp.toLocaleDateString()} {item.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </Text>
-            {item.emergency_triggered && (
-              <Chip compact icon="alert" style={styles.emergencyChip} textStyle={styles.emergencyText}>
-                Emergency flagged
-              </Chip>
-            )}
-          </Card.Content>
-        </Card>
+    <AppScreen title="History">
+      {messages.length === 0 ? (
+        <View style={styles.empty}>
+          <Text style={styles.emptyIcon}>📋</Text>
+          <Text style={styles.emptyTitle}>No history yet</Text>
+          <Text style={styles.emptyBody}>Your queries will appear here after your first chat.</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={[...messages].reverse()}
+          keyExtractor={(m) => m.id}
+          contentContainerStyle={styles.list}
+          renderItem={({ item }) => (
+            <Card style={styles.card} mode="outlined">
+              <Card.Content>
+                <Text style={styles.query} numberOfLines={3}>{item.content}</Text>
+                <Text style={styles.time}>
+                  {item.timestamp.toLocaleDateString()} {item.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </Text>
+                {item.emergency_triggered && (
+                  <Chip compact icon="alert" style={styles.emergencyChip} textStyle={styles.emergencyText}>
+                    Emergency flagged
+                  </Chip>
+                )}
+              </Card.Content>
+            </Card>
+          )}
+        />
       )}
-    />
+    </AppScreen>
   );
 }
 

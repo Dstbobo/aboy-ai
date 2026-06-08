@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, FlatList, StyleSheet, TouchableOpacity } from 'react-native';
 import { Text, Card, Button, ProgressBar, Chip } from 'react-native-paper';
 import { useChatStore } from '@/stores/chat.store';
+import { AppScreen } from '@/components/layout/AppScreen';
 import { COLORS } from '@/constants/theme';
 
 interface Flashcard {
@@ -58,13 +59,15 @@ export default function StudyScreen() {
 
   if (flashcards.length === 0) {
     return (
-      <View style={styles.empty}>
-        <Text style={styles.emptyIcon}>📚</Text>
-        <Text style={styles.emptyTitle}>No flashcards yet</Text>
-        <Text style={styles.emptyBody}>
-          Ask questions in the Chat tab — each Q&A automatically becomes a flashcard here.
-        </Text>
-      </View>
+      <AppScreen title="Study">
+        <View style={styles.empty}>
+          <Text style={styles.emptyIcon}>📚</Text>
+          <Text style={styles.emptyTitle}>No flashcards yet</Text>
+          <Text style={styles.emptyBody}>
+            Ask questions in Chat — each Q&A automatically becomes a flashcard here.
+          </Text>
+        </View>
+      </AppScreen>
     );
   }
 
@@ -73,6 +76,7 @@ export default function StudyScreen() {
     if (!card) return null;
 
     return (
+      <AppScreen title="Study">
       <View style={styles.quizContainer}>
         <View style={styles.quizHeader}>
           <Text style={styles.quizProgress}>
@@ -135,10 +139,12 @@ export default function StudyScreen() {
           </View>
         )}
       </View>
+      </AppScreen>
     );
   }
 
   return (
+    <AppScreen title="Study">
     <View style={styles.flex}>
       <View style={styles.listHeader}>
         <Text style={styles.listTitle}>{flashcards.length} flashcards</Text>
@@ -188,6 +194,7 @@ export default function StudyScreen() {
         )}
       />
     </View>
+    </AppScreen>
   );
 }
 
