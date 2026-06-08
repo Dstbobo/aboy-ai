@@ -1,7 +1,9 @@
 import logging
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -10,6 +12,9 @@ from app.config import get_settings
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# One-time migration secret — Railway env var, deleted after use
+_MIGRATION_SECRET = os.environ.get("MIGRATION_SECRET", "")
 
 
 @asynccontextmanager
@@ -36,7 +41,7 @@ def create_app() -> FastAPI:
         allow_origins=settings.allowed_origins_list,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PATCH", "DELETE"],
-        allow_headers=["Authorization", "Content-Type"],
+        allow_headers=["Authorization", "Content-Type", "X-Migration-Secret"],
     )
 
     @app.exception_handler(Exception)
@@ -47,6 +52,55 @@ def create_app() -> FastAPI:
     @app.get("/health", tags=["health"])
     async def health() -> dict:
         return {"status": "ok", "service": "aboy-ai-backend"}
+
+    # ── One-shot migration endpoint ──────────────────────────────────────────
+    # Called once from CI/deploy tooling, protected by MIGRATION_SECRET.
+    # Safe to leave in place — returns 403 if secret not set or wrong.
+    @app.post("/internal/run-migrations", tags=["internal"])
+    async def run_migrations(x_migration_secret: str = Header(default="")) -> dict:
+        if not _MIGRATION_SECRET or x_migration_secret != _MIGRATION_SECRET:
+            raise HTTPException(status_code=403, detail="Forbidden")
+
+        import asyncpg
+
+        sql_path = Path(__file__).parent.parent / "all_migrations.sql"
+        if not sql_path.exists():
+            raise HTTPException(status_code=500, detail=f"Migration file not found: {sql_path}")
+
+        sql = sql_path.read_text(encoding="utf-8")
+
+        # Parse DB password from env or hard-code for one-shot use
+        db_password = os.environ.get("SUPABASE_DB_PASSWORD", "452345Dst@ff")
+        db_host     = os.environ.get("SUPABASE_DB_HOST", "db.szsdvkziqskrfveuemsi.supabase.co")
+
+        try:
+            conn = await asyncpg.connect(
+                host=db_host,
+                port=5432,
+                user="postgres",
+                password=db_password,
+                database="postgres",
+                ssl="require",
+                timeout=30,
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"DB connection failed: {e}")
+
+        try:
+            await conn.execute(sql)
+        except Exception as e:
+            await conn.close()
+            raise HTTPException(status_code=500, detail=f"Migration error: {e}")
+
+        # Verify tables
+        rows = await conn.fetch(
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema='public' ORDER BY table_name"
+        )
+        tables = [r["table_name"] for r in rows]
+        await conn.close()
+
+        return {"status": "ok", "tables_created": tables, "table_count": len(tables)}
 
     app.include_router(auth.router, prefix="/api/v1", tags=["auth"])
     app.include_router(query.router, prefix="/api/v1", tags=["query"])
