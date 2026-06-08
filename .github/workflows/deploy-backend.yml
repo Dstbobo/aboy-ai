@@ -54,7 +54,7 @@ jobs:
           RAILWAY_SERVICE_ID: ${{ env.SERVICE_ID }}
         run: |
           echo "Uploading backend to Railway service $SERVICE_ID..."
-          railway up --detach
+          railway up --service "$SERVICE_ID" --detach
           echo "✅ Upload complete — Railway is building"
 
       # Step 3: Verify the new code is live (health endpoint gets "auth":"httpx-v2").
