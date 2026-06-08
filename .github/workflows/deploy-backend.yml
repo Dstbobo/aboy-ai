@@ -5,23 +5,62 @@ on:
     branches: [main]
     paths:
       - 'backend/**'
-  workflow_dispatch:   # allows manual trigger from GitHub UI
+  workflow_dispatch:
 
 jobs:
   deploy:
     name: Deploy to Railway
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Railway CLI
-        run: curl -fsSL https://railway.app/install.sh | sh
+      # ── Approach 1: GraphQL redeploy (works with team tokens) ────────────
+      # Triggers Railway to redeploy from its connected GitHub source.
+      # If Railway has GitHub integration set up for this service, this
+      # will pick up the latest commit automatically.
+      - name: Trigger Railway redeploy via GraphQL
+        id: graphql_deploy
+        continue-on-error: true
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -X POST https://backboard.railway.app/graphql/v2 \
+            -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "query": "mutation { serviceInstanceRedeploy(environmentId: \"74fa354a-77ce-4c23-9a50-1a2cd41c40a9\", serviceId: \"9d7c9935-1da8-4eda-8d72-90ad2d19d297\") }"
+            }')
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -1)
+          echo "HTTP $HTTP_CODE: $BODY"
+          if echo "$BODY" | grep -q '"errors"'; then
+            echo "graphql_ok=false" >> $GITHUB_OUTPUT
+          else
+            echo "graphql_ok=true" >> $GITHUB_OUTPUT
+          fi
 
-      - name: Deploy to Railway
+      # ── Approach 2: CLI upload (works with project tokens) ───────────────
+      # Falls back to uploading local files via `railway up` if GraphQL
+      # redeploy reported an error (e.g. token is a project token, not team).
+      - name: Install Railway CLI
+        if: steps.graphql_deploy.outputs.graphql_ok != 'true'
+        run: npm install -g @railway/cli
+
+      - name: Deploy via railway up (fallback)
+        if: steps.graphql_deploy.outputs.graphql_ok != 'true'
+        working-directory: backend
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: railway up --detach --service 9d7c9935-1da8-4eda-8d72-90ad2d19d297
+          RAILWAY_PROJECT_ID: 1b6fa081-85c8-4d73-b0c9-c9488fac29a6
+          RAILWAY_ENVIRONMENT_ID: 74fa354a-77ce-4c23-9a50-1a2cd41c40a9
+          RAILWAY_SERVICE_ID: 9d7c9935-1da8-4eda-8d72-90ad2d19d297
+        run: railway up --detach
+
+      - name: Deploy result
+        run: |
+          if [ "${{ steps.graphql_deploy.outputs.graphql_ok }}" = "true" ]; then
+            echo "✅ Deployed via Railway GraphQL API"
+          else
+            echo "✅ Deployed via railway up CLI"
+          fi
+          echo "Service: https://fantastic-possibility-production-f4fa.up.railway.app/health"
