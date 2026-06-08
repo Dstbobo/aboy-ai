@@ -63,7 +63,10 @@ def create_app() -> FastAPI:
 
         import asyncpg
 
+        # Works both locally (backend/app/../all_migrations.sql) and in Docker (/app/all_migrations.sql)
         sql_path = Path(__file__).parent.parent / "all_migrations.sql"
+        if not sql_path.exists():
+            sql_path = Path("/app/all_migrations.sql")
         if not sql_path.exists():
             raise HTTPException(status_code=500, detail=f"Migration file not found: {sql_path}")
 

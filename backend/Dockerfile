@@ -15,6 +15,7 @@ RUN pip install --upgrade pip setuptools wheel
 
 COPY pyproject.toml .
 COPY app/ ./app/
+COPY all_migrations.sql ./all_migrations.sql
 
 # Install all dependencies (non-editable for production)
 RUN pip install .
