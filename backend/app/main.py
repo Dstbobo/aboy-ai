@@ -51,7 +51,7 @@ def create_app() -> FastAPI:
 
     @app.get("/health", tags=["health"])
     async def health() -> dict:
-        return {"status": "ok", "service": "aboy-ai-backend"}
+        return {"status": "ok", "service": "aboy-ai-backend", "auth": "httpx-v2"}
 
     # ── One-shot migration endpoint ──────────────────────────────────────────
     # Called once from CI/deploy tooling, protected by MIGRATION_SECRET.
