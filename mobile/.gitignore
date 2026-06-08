@@ -1,0 +1,14 @@
+node_modules/
+.expo/
+dist/
+.env.local
+.env
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+google-service-account.json
+android/
+ios/

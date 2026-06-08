@@ -1,0 +1,1187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>Aboy AI — Live Demo</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --primary: #0a5f52;
+      --primary-light: #1a8a78;
+      --primary-dark: #064038;
+      --secondary: #e8f5f2;
+      --accent: #f0a500;
+      --error: #d32f2f;
+      --warning: #f57c00;
+      --success: #388e3c;
+      --surface: #ffffff;
+      --background: #f5f7fa;
+      --text: #1a1a2e;
+      --text-secondary: #6b7280;
+      --border: #e5e7eb;
+      --emergency: #d32f2f;
+      --emergency-light: #ffebee;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--background);
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Header ── */
+    .header {
+      background: var(--primary);
+      color: white;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      flex-shrink: 0;
+    }
+    .header-left { display: flex; align-items: center; gap: 10px; }
+    .header-logo { font-size: 24px; }
+    .header-title { font-size: 18px; font-weight: 800; letter-spacing: -0.3px; }
+    .header-subtitle { font-size: 11px; opacity: 0.8; }
+    .role-badge {
+      background: rgba(255,255,255,0.2);
+      border-radius: 20px;
+      padding: 4px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid rgba(255,255,255,0.3);
+      transition: background 0.2s;
+    }
+    .role-badge:hover { background: rgba(255,255,255,0.3); }
+
+    /* ── Tabs ── */
+    .tabs {
+      display: flex;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .tab {
+      flex: 1;
+      padding: 10px;
+      text-align: center;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+    }
+    .tab.active {
+      color: var(--primary);
+      border-bottom-color: var(--primary);
+    }
+    .tab-icon { font-size: 16px; display: block; margin-bottom: 2px; }
+
+    /* ── Offline Banner ── */
+    .offline-banner {
+      background: var(--warning);
+      color: white;
+      text-align: center;
+      padding: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      display: none;
+    }
+
+    /* ── Streak Bar ── */
+    .streak-bar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 8px 16px;
+      display: flex;
+      gap: 0;
+      flex-shrink: 0;
+    }
+    .streak-stat {
+      flex: 1;
+      text-align: center;
+    }
+    .streak-stat + .streak-stat {
+      border-left: 1px solid var(--border);
+    }
+    .streak-value { font-size: 18px; font-weight: 800; color: var(--primary); }
+    .streak-label { font-size: 10px; color: var(--text-secondary); margin-top: 1px; }
+
+    /* ── Chat Area ── */
+    .chat-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      scroll-behavior: smooth;
+    }
+
+    /* ── Empty State ── */
+    .empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 32px 24px;
+      text-align: center;
+      gap: 12px;
+    }
+    .empty-icon { font-size: 56px; }
+    .empty-title { font-size: 22px; font-weight: 800; color: var(--primary); }
+    .empty-sub { font-size: 14px; color: var(--text-secondary); line-height: 1.6; max-width: 280px; }
+    .suggestion-chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 4px; }
+    .chip {
+      background: var(--secondary);
+      border: 1px solid #c5e8df;
+      color: var(--primary);
+      border-radius: 20px;
+      padding: 6px 14px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .chip:hover { background: var(--primary); color: white; border-color: var(--primary); }
+
+    /* ── Messages ── */
+    .message {
+      display: flex;
+      flex-direction: column;
+      max-width: 88%;
+      gap: 4px;
+      animation: fadeIn 0.2s ease;
+    }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+    .message.user { align-self: flex-end; align-items: flex-end; }
+    .message.assistant { align-self: flex-start; align-items: flex-start; }
+
+    .bubble {
+      border-radius: 16px;
+      padding: 12px 14px;
+      font-size: 15px;
+      line-height: 1.55;
+    }
+    .message.user .bubble {
+      background: var(--primary);
+      color: white;
+      border-bottom-right-radius: 4px;
+    }
+    .message.assistant .bubble {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-bottom-left-radius: 4px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    }
+    .msg-time {
+      font-size: 10px;
+      color: var(--text-secondary);
+      margin: 0 4px;
+    }
+
+    /* Markdown-ish styling inside bubble */
+    .bubble strong { font-weight: 700; }
+    .bubble em { font-style: italic; }
+    .bubble ul { padding-left: 18px; margin: 6px 0; }
+    .bubble li { margin-bottom: 3px; }
+    .bubble p { margin-bottom: 6px; }
+    .bubble p:last-child { margin-bottom: 0; }
+    .bubble h3 { font-size: 14px; font-weight: 700; margin-bottom: 4px; color: var(--primary-dark); }
+
+    /* ── Cursor blink ── */
+    .cursor {
+      display: inline-block;
+      width: 8px;
+      height: 16px;
+      background: var(--primary);
+      border-radius: 1px;
+      margin-left: 2px;
+      vertical-align: middle;
+      animation: blink 0.7s steps(1) infinite;
+    }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    /* ── Citations ── */
+    .citations {
+      margin-top: 10px;
+      border-top: 1px solid var(--border);
+      padding-top: 10px;
+    }
+    .citations-toggle {
+      font-size: 12px;
+      color: var(--primary);
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .citations-list { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+    .citation-item {
+      background: var(--secondary);
+      border-radius: 8px;
+      padding: 10px;
+      font-size: 12px;
+    }
+    .citation-name { font-weight: 700; color: var(--text); margin-bottom: 2px; }
+    .citation-meta { color: var(--text-secondary); display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .grade-badge {
+      background: var(--primary-light);
+      color: white;
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-size: 10px;
+      font-weight: 700;
+    }
+    .citation-url {
+      color: var(--primary);
+      text-decoration: underline;
+      cursor: pointer;
+      font-size: 11px;
+      margin-top: 4px;
+      display: block;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* ── Emergency Banner ── */
+    .emergency-banner {
+      background: var(--emergency-light);
+      border-left: 4px solid var(--emergency);
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin-bottom: 6px;
+    }
+    .emergency-title { font-weight: 700; color: var(--emergency); font-size: 14px; margin-bottom: 4px; }
+    .emergency-body { font-size: 13px; color: var(--text); line-height: 1.5; margin-bottom: 10px; }
+    .emergency-btns { display: flex; gap: 8px; }
+    .emergency-btn {
+      flex: 1;
+      padding: 8px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      border: none;
+      cursor: pointer;
+      text-align: center;
+    }
+    .emergency-btn.primary { background: var(--emergency); color: white; }
+    .emergency-btn.outline { background: transparent; color: var(--emergency); border: 1.5px solid var(--emergency); }
+
+    /* ── Input Row ── */
+    .input-row {
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      padding: 10px 12px 14px;
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .text-input {
+      flex: 1;
+      background: var(--background);
+      border: 1.5px solid var(--border);
+      border-radius: 22px;
+      padding: 10px 16px;
+      font-size: 15px;
+      color: var(--text);
+      resize: none;
+      max-height: 120px;
+      outline: none;
+      font-family: inherit;
+      line-height: 1.4;
+      transition: border-color 0.2s;
+    }
+    .text-input:focus { border-color: var(--primary); }
+    .text-input::placeholder { color: var(--text-secondary); }
+    .send-btn {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      border: none;
+      background: var(--primary);
+      color: white;
+      font-size: 18px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: background 0.2s, transform 0.1s;
+    }
+    .send-btn:hover { background: var(--primary-light); }
+    .send-btn:active { transform: scale(0.94); }
+    .send-btn:disabled { background: var(--border); cursor: not-allowed; }
+
+    /* ── Role Picker Modal ── */
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.45);
+      display: none;
+      align-items: flex-end;
+      justify-content: center;
+      z-index: 100;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: var(--surface);
+      border-radius: 20px 20px 0 0;
+      width: 100%;
+      max-width: 480px;
+      max-height: 90dvh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    /* Screen header inside modal */
+    .modal-header {
+      background: var(--primary);
+      padding: 18px 20px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .modal-header-back {
+      background: none; border: none; color: rgba(255,255,255,0.85);
+      font-size: 20px; cursor: pointer; padding: 0 6px 0 0; line-height: 1;
+    }
+    .modal-header-text { flex: 1; }
+    .modal-step { font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.7); letter-spacing: 1px; }
+    .modal-title { font-size: 18px; font-weight: 800; color: #fff; margin-top: 2px; }
+    .modal-subtitle { font-size: 12px; color: rgba(255,255,255,0.8); margin-top: 2px; }
+    .modal-role-pill {
+      background: rgba(255,255,255,0.2);
+      color: #fff; font-size: 12px; font-weight: 600;
+      padding: 3px 10px; border-radius: 20px; margin-top: 4px; display: inline-block;
+    }
+    /* Scrollable body */
+    .modal-body { overflow-y: auto; flex: 1; padding: 14px 16px; }
+    /* Section label */
+    .role-section-label {
+      font-size: 10px; font-weight: 800; letter-spacing: 1.5px;
+      color: var(--text-secondary); text-transform: uppercase;
+      margin: 10px 0 8px;
+    }
+    /* Role cards grid (2 columns) */
+    .role-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 4px; }
+    .role-card {
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 10px;
+      cursor: pointer;
+      text-align: center;
+      background: var(--surface);
+      transition: all 0.15s;
+      position: relative;
+    }
+    .role-card:hover { border-color: var(--primary-light); background: var(--secondary); }
+    .role-card.selected { border-color: var(--primary); background: var(--secondary); }
+    .role-card-icon { font-size: 22px; display: block; margin-bottom: 5px; }
+    .role-card-label { font-size: 12px; font-weight: 600; color: var(--text); line-height: 1.3; }
+    .role-card.selected .role-card-label { color: var(--primary); }
+    .role-card-check {
+      position: absolute; top: 5px; right: 5px;
+      width: 18px; height: 18px; border-radius: 50%;
+      background: var(--primary); display: flex; align-items: center; justify-content: center;
+      font-size: 10px; color: #fff; font-weight: 800;
+      display: none;
+    }
+    .role-card.selected .role-card-check { display: flex; }
+    /* Specialty list */
+    .spec-list { display: flex; flex-direction: column; gap: 8px; }
+    .spec-item {
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 14px; font-weight: 500; color: var(--text);
+      background: var(--surface);
+      transition: all 0.15s;
+    }
+    .spec-item:hover { border-color: var(--primary-light); background: var(--secondary); }
+    .spec-item.selected { border-color: var(--primary); background: var(--secondary); color: var(--primary); font-weight: 700; }
+    .spec-check {
+      width: 22px; height: 22px; border-radius: 50%;
+      background: var(--primary); display: none;
+      align-items: center; justify-content: center;
+      font-size: 11px; color: #fff; font-weight: 800; flex-shrink: 0; margin-left: 10px;
+    }
+    .spec-item.selected .spec-check { display: flex; }
+    /* Footer CTA */
+    .modal-footer {
+      padding: 12px 16px 20px;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .modal-cta {
+      width: 100%; padding: 14px;
+      background: var(--primary); color: #fff;
+      border: none; border-radius: 12px;
+      font-size: 15px; font-weight: 700;
+      cursor: pointer; transition: background 0.2s;
+    }
+    .modal-cta:disabled { background: var(--border); color: var(--text-secondary); cursor: not-allowed; }
+    .modal-cta:not(:disabled):hover { background: var(--primary-light); }
+    .modal-cancel {
+      width: 100%; padding: 10px;
+      background: none; border: none;
+      font-size: 14px; font-weight: 600; color: var(--text-secondary);
+      cursor: pointer; margin-top: 6px;
+    }
+
+    /* ── Study Tab ── */
+    .tab-content { display: none; flex: 1; overflow-y: auto; padding: 16px; flex-direction: column; gap: 12px; }
+    .tab-content.active { display: flex; }
+
+    .flashcard {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+      cursor: pointer;
+      transition: box-shadow 0.2s;
+    }
+    .flashcard:hover { box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+    .flashcard-num { font-size: 11px; color: var(--text-secondary); margin-bottom: 6px; }
+    .flashcard-q { font-size: 15px; font-weight: 600; color: var(--text); line-height: 1.4; }
+    .flashcard-a {
+      display: none;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+      font-size: 14px;
+      color: var(--text);
+      line-height: 1.5;
+    }
+    .flashcard.flipped .flashcard-a { display: block; }
+    .flashcard-source { font-size: 11px; color: var(--primary); margin-top: 6px; font-style: italic; }
+
+    .study-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+    .study-title { font-size: 17px; font-weight: 800; color: var(--text); }
+    .start-quiz-btn {
+      background: var(--primary);
+      color: white;
+      border: none;
+      border-radius: 10px;
+      padding: 8px 16px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    /* ── History Tab ── */
+    .history-item {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+    }
+    .history-q { font-size: 14px; color: var(--text); line-height: 1.4; margin-bottom: 6px; }
+    .history-meta { font-size: 11px; color: var(--text-secondary); }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-left">
+    <span class="header-logo">🏥</span>
+    <div>
+      <div class="header-title">Aboy AI</div>
+      <div class="header-subtitle">Healthcare AI for students</div>
+    </div>
+  </div>
+  <div class="role-badge" onclick="openRoleModal()">
+    <span id="role-label">Med Student</span> ▾
+  </div>
+</div>
+
+<!-- Tabs -->
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('chat', this)">
+    <span class="tab-icon">💬</span>Chat
+  </div>
+  <div class="tab" onclick="switchTab('history', this)">
+    <span class="tab-icon">📋</span>History
+  </div>
+  <div class="tab" onclick="switchTab('study', this)">
+    <span class="tab-icon">📚</span>Study
+  </div>
+</div>
+
+<!-- Streak Bar -->
+<div class="streak-bar">
+  <div class="streak-stat">
+    <div class="streak-value">🔥 <span id="streak-count">3</span></div>
+    <div class="streak-label">Day Streak</div>
+  </div>
+  <div class="streak-stat">
+    <div class="streak-value" id="today-count">5</div>
+    <div class="streak-label">Today</div>
+  </div>
+  <div class="streak-stat">
+    <div class="streak-value" id="best-streak">7</div>
+    <div class="streak-label">Best</div>
+  </div>
+</div>
+
+<!-- ── CHAT TAB ── -->
+<div id="tab-chat" class="tab-content active" style="padding:0; flex-direction: column; overflow: hidden;">
+  <div class="chat-area" id="chat-area">
+    <div class="empty-state" id="empty-state">
+      <div class="empty-icon">🏥</div>
+      <div class="empty-title">Aboy AI</div>
+      <div class="empty-sub">Ask any healthcare or study question. Every answer is cited from verified sources.</div>
+      <div class="suggestion-chips">
+        <div class="chip" onclick="sendSuggestion('What is the mechanism of metformin?')">Metformin mechanism</div>
+        <div class="chip" onclick="sendSuggestion('NICE guidelines for hypertension management')">Hypertension NICE</div>
+        <div class="chip" onclick="sendSuggestion('What are the signs of anaphylaxis?')">Anaphylaxis signs</div>
+        <div class="chip" onclick="sendSuggestion('How does the renin-angiotensin system work?')">RAAS explained</div>
+        <div class="chip" onclick="sendSuggestion('First line antibiotics for community acquired pneumonia')">CAP antibiotics</div>
+        <div class="chip" onclick="sendSuggestion('NCLEX tips for medication administration safety')">NCLEX tips</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="input-row">
+    <textarea
+      class="text-input"
+      id="user-input"
+      placeholder="Ask a healthcare question…"
+      rows="1"
+      onkeydown="handleKey(event)"
+      oninput="autoResize(this)"
+    ></textarea>
+    <button class="send-btn" id="send-btn" onclick="handleSend()">➤</button>
+  </div>
+</div>
+
+<!-- ── HISTORY TAB ── -->
+<div id="tab-history" class="tab-content">
+  <div id="history-list" style="display:flex;flex-direction:column;gap:10px;">
+    <div style="text-align:center;color:var(--text-secondary);font-size:14px;padding:32px;">
+      No history yet. Ask a question in the Chat tab.
+    </div>
+  </div>
+</div>
+
+<!-- ── STUDY TAB ── -->
+<div id="tab-study" class="tab-content">
+  <div class="study-header">
+    <div class="study-title" id="flashcard-count">0 flashcards</div>
+    <button class="start-quiz-btn" onclick="alert('Ask questions in Chat first — each Q&A becomes a flashcard!')">Quiz Mode</button>
+  </div>
+  <div id="flashcard-list" style="display:flex;flex-direction:column;gap:10px;">
+    <div style="text-align:center;color:var(--text-secondary);font-size:14px;padding:32px;">
+      📚 Each chat Q&amp;A automatically becomes a flashcard here. Ask something in Chat to get started!
+    </div>
+  </div>
+</div>
+
+<!-- Role Modal — 2-screen flow -->
+<div class="modal-overlay" id="role-modal" onclick="closeRoleModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+
+    <!-- Screen 1: Role selection -->
+    <div id="role-screen-1">
+      <div class="modal-header">
+        <div class="modal-header-text">
+          <div class="modal-step">STEP 1 OF 2</div>
+          <div class="modal-title">What best describes you?</div>
+          <div class="modal-subtitle">Choose your role to personalise your AI</div>
+        </div>
+      </div>
+      <div class="modal-body" id="role-screen-1-body">
+        <div class="role-section-label">🎓 Students</div>
+        <div class="role-grid" id="student-grid"></div>
+        <div class="role-section-label" style="margin-top:14px;">💼 Professionals</div>
+        <div class="role-grid" id="pro-grid"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="modal-cta" id="role-continue-btn" disabled onclick="goToSpecialties()">Continue →</button>
+        <button class="modal-cancel" onclick="closeRoleModal()">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Screen 2: Specialty selection -->
+    <div id="role-screen-2" style="display:none; flex-direction:column; height:100%;">
+      <div class="modal-header">
+        <button class="modal-header-back" onclick="backToRoles()">←</button>
+        <div class="modal-header-text">
+          <div class="modal-step">STEP 2 OF 2</div>
+          <div class="modal-title">What is your specific area?</div>
+          <div id="role-pill" class="modal-role-pill"></div>
+        </div>
+      </div>
+      <div class="modal-body">
+        <div class="spec-list" id="spec-list"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="modal-cta" id="spec-go-btn" disabled onclick="confirmRoleSelection()">Let's Go →</button>
+        <button class="modal-cancel" onclick="backToRoles()">← Back</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────
+let currentRole = 'student_med';
+let sessionHistory = [];
+let flashcards = [];
+let todayCount = 5;
+let streakCount = 3;
+
+// ── Demo AI responses by role ──────────────────────────
+const DEMO_RESPONSES = {
+  default: {
+    'metformin': {
+      answer: `<h3>Mechanism of Metformin</h3>
+<p>Metformin (biguanide class) works through <strong>three main mechanisms</strong>:</p>
+<ul>
+<li><strong>Hepatic glucose suppression</strong> — Activates AMP-activated protein kinase (AMPK) → inhibits gluconeogenesis and glycogenolysis in the liver (primary effect, ~70% of its glucose-lowering action)</li>
+<li><strong>Improved peripheral insulin sensitivity</strong> — Enhances glucose uptake in skeletal muscle via GLUT4 translocation</li>
+<li><strong>Intestinal absorption reduction</strong> — Slows glucose absorption from the GI tract</li>
+</ul>
+<p>Notably, metformin <strong>does not stimulate insulin secretion</strong>, so it carries minimal hypoglycaemia risk when used as monotherapy. It also has modest benefits on weight and cardiovascular outcomes.</p>
+<p>It is <strong>contraindicated</strong> in eGFR &lt;30 mL/min/1.73m² (risk of lactic acidosis), and should be held before IV contrast administration.</p>`,
+      citations: [
+        { name: 'NICE — Type 2 Diabetes in Adults (NG28)', grade: 'A', url: 'https://www.nice.org.uk/guidance/ng28', section: 'Pharmacological therapy' },
+        { name: 'CDC — Diabetes Management Guidelines', grade: 'A', url: 'https://www.cdc.gov/diabetes', section: 'First-line therapy' },
+      ]
+    },
+    'hypertension': {
+      answer: `<h3>NICE Hypertension Guidelines (NG136)</h3>
+<p>NICE NG136 recommends a <strong>stepped approach</strong>:</p>
+<ul>
+<li><strong>Step 1</strong>: ACE inhibitor (e.g. lisinopril) if &lt;55 yrs; Calcium channel blocker (e.g. amlodipine) if ≥55 yrs or Black African origin</li>
+<li><strong>Step 2</strong>: ACE/ARB + CCB combination</li>
+<li><strong>Step 3</strong>: ACE/ARB + CCB + thiazide-like diuretic (chlorthalidone preferred)</li>
+<li><strong>Step 4</strong>: Add low-dose spironolactone if K⁺ &lt;4.5 mmol/L</li>
+</ul>
+<p><strong>Targets</strong>: &lt;140/90 mmHg clinic, &lt;135/85 ABPM for most adults. Use QRISK3 to guide treatment decisions. Lifestyle: DASH diet, ↓sodium, exercise, alcohol reduction.</p>`,
+      citations: [
+        { name: 'NICE — Hypertension in Adults (NG136)', grade: 'A', url: 'https://www.nice.org.uk/guidance/ng136', section: 'Drug treatment' },
+        { name: 'CDC — Hypertension Clinical Guidance', grade: 'A', url: 'https://www.cdc.gov/bloodpressure', section: 'Management' },
+      ]
+    },
+    'anaphylaxis': {
+      answer: `<h3>⚠️ Signs of Anaphylaxis</h3>
+<p>Anaphylaxis is a <strong>life-threatening systemic hypersensitivity reaction</strong>. Recognise it by involvement of ≥2 body systems after exposure to a trigger:</p>
+<ul>
+<li><strong>Airway</strong>: stridor, throat tightness, hoarseness, tongue/lip swelling</li>
+<li><strong>Breathing</strong>: wheeze, bronchospasm, tachypnoea, SpO₂ drop</li>
+<li><strong>Circulation</strong>: tachycardia, hypotension, pale/mottled skin, loss of consciousness</li>
+<li><strong>Skin/mucosa</strong>: urticaria, angioedema, flushing, pruritis (present in ~80%)</li>
+<li><strong>GI</strong>: nausea, vomiting, abdominal cramps</li>
+</ul>
+<p><strong>Immediate treatment</strong>: Adrenaline (epinephrine) 0.5mg IM (anterolateral thigh) — this is the <em>only</em> first-line treatment. Call 999/emergency services immediately.</p>`,
+      citations: [
+        { name: 'WHO — Anaphylaxis Guidelines', grade: 'A', url: 'https://www.who.int', section: 'Emergency management' },
+        { name: 'NICE — Anaphylaxis Assessment and Referral (CG134)', grade: 'A', url: 'https://www.nice.org.uk/guidance/cg134', section: 'Recognition' },
+      ],
+      emergency: true
+    },
+    'raas': {
+      answer: `<h3>Renin-Angiotensin-Aldosterone System (RAAS)</h3>
+<p>The RAAS is a hormonal cascade that regulates <strong>blood pressure and fluid balance</strong>:</p>
+<ul>
+<li><strong>Renin</strong> — Released by juxtaglomerular cells of the kidney in response to: ↓renal perfusion, ↓Na⁺, sympathetic activation (β₁). Cleaves angiotensinogen → <strong>Angiotensin I</strong></li>
+<li><strong>ACE</strong> — (Angiotensin-Converting Enzyme, in lung endothelium) converts Ang I → <strong>Angiotensin II</strong>. Also degrades bradykinin (→ ACE inhibitor cough)</li>
+<li><strong>Angiotensin II</strong> — Acts on AT₁ receptors: vasoconstriction, aldosterone release, ADH release, Na⁺/H₂O retention, sympathetic potentiation</li>
+<li><strong>Aldosterone</strong> — Acts on collecting duct: ↑Na⁺ reabsorption, ↑K⁺/H⁺ excretion → fluid retention → ↑BP</li>
+</ul>
+<p><strong>Drug targets</strong>: ACE inhibitors (lisinopril), ARBs (losartan), direct renin inhibitors (aliskiren), aldosterone antagonists (spironolactone).</p>`,
+      citations: [
+        { name: 'WHO — Cardiovascular Disease Guidelines', grade: 'A', url: 'https://www.who.int', section: 'Pathophysiology' },
+        { name: 'NICE — Hypertension in Adults (NG136)', grade: 'A', url: 'https://www.nice.org.uk/guidance/ng136', section: 'Pharmacology' },
+      ]
+    },
+    'pneumonia': {
+      answer: `<h3>First-Line Antibiotics for Community-Acquired Pneumonia (CAP)</h3>
+<p>Treatment depends on severity (CURB-65 score):</p>
+<ul>
+<li><strong>CURB-65 0-1 (mild, outpatient)</strong>: Amoxicillin 500mg TDS × 5 days. Add doxycycline 200mg loading then 100mg OD if atypical suspected (Mycoplasma, Chlamydia). Azithromycin if penicillin-allergic.</li>
+<li><strong>CURB-65 2 (moderate, consider hospital)</strong>: Amoxicillin + clarithromycin 500mg BD × 7 days</li>
+<li><strong>CURB-65 3-5 (severe, hospital)</strong>: Co-amoxiclav 1.2g IV TDS + clarithromycin 500mg IV BD. Consider piperacillin-tazobactam if risk of Pseudomonas.</li>
+</ul>
+<p><strong>CURB-65</strong>: Confusion, Urea &gt;7 mmol/L, RR ≥30, BP &lt;90/60, Age ≥65 — one point each.</p>
+<p>Always send blood cultures and sputum MC&S before starting antibiotics if hospitalised.</p>`,
+      citations: [
+        { name: 'CDC — Antibiotic Prescribing & Stewardship', grade: 'A', url: 'https://www.cdc.gov/antibiotic-use', section: 'CAP treatment' },
+        { name: 'NICE — Pneumonia in Adults (NG138)', grade: 'A', url: 'https://www.nice.org.uk/guidance/ng138', section: 'Antibiotic choice' },
+      ]
+    },
+    'nclex': {
+      answer: `<h3>NCLEX Medication Administration Safety Tips</h3>
+<p>The <strong>8 Rights of Medication Administration</strong> (expanded from the original 5):</p>
+<ul>
+<li><strong>Right Patient</strong> — Check 2 identifiers (name + DOB or MRN). Never rely on room number.</li>
+<li><strong>Right Drug</strong> — Verify generic and brand name. Check for look-alike/sound-alike (LASA) alerts.</li>
+<li><strong>Right Dose</strong> — Calculate independently. Use weight-based dosing for paediatric and renally-adjusted doses in CKD.</li>
+<li><strong>Right Route</strong> — Never give IV medications IM/SQ without order. Oral only where safe.</li>
+<li><strong>Right Time</strong> — Follow frequency. Note peak/trough timing for narrow therapeutic index drugs (vancomycin, digoxin, aminoglycosides).</li>
+<li><strong>Right Documentation</strong> — Sign immediately after administration, never before.</li>
+<li><strong>Right Reason</strong> — Understand the indication before giving.</li>
+<li><strong>Right Response</strong> — Monitor and document therapeutic effect and adverse reactions.</li>
+</ul>
+<p><strong>High-alert medications</strong> (ISMP): insulin, anticoagulants, opioids, chemotherapy, concentrated electrolytes — always require double-check.</p>`,
+      citations: [
+        { name: 'CDC — Medication Safety Guidelines', grade: 'A', url: 'https://www.cdc.gov', section: 'Safe administration' },
+        { name: 'WHO — Medication Without Harm (Global Challenge)', grade: 'A', url: 'https://www.who.int/initiatives/medication-without-harm', section: 'Patient safety' },
+      ]
+    }
+  }
+};
+
+const PRO_PREFIX = {
+  pro_senior: "Evidence summary (Grade A): ",
+  pro_junior: "Clinical note: ",
+  pro_nurse: "Nursing perspective: ",
+};
+
+const STUDENT_TONE = {
+  student_med: "Here's a teaching explanation: ",
+  student_nurse: "From a nursing education standpoint: ",
+  student_allied: "For your allied health studies: ",
+};
+
+const EMERGENCY_KEYWORDS = ['anaphylaxis','chest pain','heart attack','stroke','suicide','overdose','seizure','not breathing','cant breathe',"can't breathe",'severe bleeding','unconscious'];
+
+function isEmergency(text) {
+  return EMERGENCY_KEYWORDS.some(k => text.toLowerCase().includes(k));
+}
+
+function matchResponse(query) {
+  const q = query.toLowerCase();
+  if (q.includes('metformin')) return DEMO_RESPONSES.default.metformin;
+  if (q.includes('hypertension') || q.includes('blood pressure') || q.includes('nice') && q.includes('hypert')) return DEMO_RESPONSES.default.hypertension;
+  if (q.includes('anaphylaxis') || q.includes('allergic') && q.includes('shock')) return DEMO_RESPONSES.default.anaphylaxis;
+  if (q.includes('raas') || q.includes('renin') || q.includes('angiotensin')) return DEMO_RESPONSES.default.raas;
+  if (q.includes('pneumonia') || q.includes('cap') || q.includes('antibiotic') && q.includes('community')) return DEMO_RESPONSES.default.pneumonia;
+  if (q.includes('nclex') || q.includes('medication') && q.includes('safety') || q.includes('8 rights')) return DEMO_RESPONSES.default.nclex;
+  return null;
+}
+
+function getGenericResponse(query) {
+  return {
+    answer: `<p>Great question! Based on current evidence from WHO, NICE, and CDC guidelines, here is what we know about <strong>${query.length > 60 ? query.slice(0,60)+'…' : query}</strong>:</p>
+<p>This is a demo environment showing the Aboy AI interface. In the live app, your question would be processed through our RAG pipeline — embedding your query with Voyage AI, searching our knowledge base (WHO, NICE, CDC, PubMed), running a Tavily web search across verified medical domains, and generating a fully cited response via Claude Sonnet.</p>
+<ul>
+<li>Try one of the suggested chips to see a real demo response</li>
+<li>Or ask about: metformin, hypertension, anaphylaxis, RAAS, pneumonia, NCLEX</li>
+</ul>`,
+    citations: [
+      { name: 'WHO — Clinical Guidelines', grade: 'A', url: 'https://www.who.int', section: 'Evidence base' },
+      { name: 'NICE — Evidence-Based Guidelines', grade: 'A', url: 'https://www.nice.org.uk', section: 'Clinical guidance' },
+    ]
+  };
+}
+
+// ── Tab switching ──────────────────────────────────────
+function switchTab(name, el) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+}
+
+// ── Role switching — 2-screen flow ────────────────────
+const STUDENT_ROLES = [
+  { id: 'student_med',            label: 'Medical Student',        icon: '👨‍⚕️' },
+  { id: 'student_nurse',          label: 'Nursing Student',        icon: '👩‍⚕️' },
+  { id: 'student_midwifery',      label: 'Midwifery Student',      icon: '🤱' },
+  { id: 'student_community_health',label:'Community Health',       icon: '🏥' },
+  { id: 'student_pharmacy',       label: 'Pharmacy Student',       icon: '💊' },
+  { id: 'student_dental',         label: 'Dental Student',         icon: '🦷' },
+  { id: 'student_physio',         label: 'Physiotherapy',          icon: '🦴' },
+  { id: 'student_radiography',    label: 'Radiography',            icon: '🔬' },
+  { id: 'student_med_lab',        label: 'Med Lab Science',        icon: '🧪' },
+  { id: 'student_biomedical',     label: 'Biomedical Science',     icon: '🧬' },
+  { id: 'student_optometry',      label: 'Optometry',              icon: '👁️' },
+  { id: 'student_nutrition',      label: 'Nutrition & Dietetics',  icon: '🥗' },
+  { id: 'student_ot',             label: 'Occupational Therapy',   icon: '🖐️' },
+  { id: 'student_health_info',    label: 'Health Informatics',     icon: '💻' },
+  { id: 'student_env_health',     label: 'Environmental Health',   icon: '🌿' },
+  { id: 'student_slt',            label: 'Speech & Language',      icon: '🗣️' },
+];
+const PROFESSIONAL_ROLES = [
+  { id: 'pro_junior',         label: 'Junior Doctor',          icon: '🩺' },
+  { id: 'pro_senior',         label: 'Senior Clinician',       icon: '👨‍⚕️' },
+  { id: 'pro_nurse',          label: 'Registered Nurse',       icon: '💉' },
+  { id: 'pro_midwife',        label: 'Midwife',                icon: '🤱' },
+  { id: 'pro_community_health',label:'Community Health Officer',icon: '🏥' },
+  { id: 'pro_pharmacist',     label: 'Pharmacist',             icon: '💊' },
+  { id: 'pro_paramedic',      label: 'Paramedic',              icon: '🚑' },
+  { id: 'pro_public_health',  label: 'Public Health Officer',  icon: '📊' },
+  { id: 'pro_dental',         label: 'Dentist',                icon: '🦷' },
+  { id: 'pro_physio',         label: 'Physiotherapist',        icon: '🦴' },
+  { id: 'pro_radiographer',   label: 'Radiographer',           icon: '🔬' },
+  { id: 'pro_med_lab',        label: 'Med Lab Scientist',      icon: '🧪' },
+  { id: 'pro_optometrist',    label: 'Optometrist',            icon: '👁️' },
+  { id: 'pro_nutritionist',   label: 'Nutritionist',           icon: '🥗' },
+  { id: 'pro_ot',             label: 'Occupational Therapist', icon: '🖐️' },
+  { id: 'pro_health_info',    label: 'Health Informaticist',   icon: '💻' },
+  { id: 'pro_env_health',     label: 'Environmental Health',   icon: '🌿' },
+  { id: 'pro_slt',            label: 'Speech Therapist',       icon: '🗣️' },
+];
+const ROLE_SPECIALTIES = {
+  student_med: ['General Medicine','Surgery','Pediatrics','Psychiatry','Radiology','Pathology','Obstetrics & Gynecology','Anaesthesia','Ophthalmology','ENT','Dermatology','Emergency Medicine','Family Medicine','Neurology','Cardiology'],
+  student_nurse: ['General Nursing','Pediatric Nursing','ICU / Critical Care Nursing','Theater / OR Nursing','Mental Health Nursing','Oncology Nursing','Renal Nursing','Neonatal Nursing','Accident & Emergency Nursing','Gerontology Nursing'],
+  student_midwifery: ['Direct Entry Midwifery','Post-RN Midwifery','BSc Midwifery','Advanced Midwifery Practice'],
+  student_community_health: ['Primary Health Care','Disease Control & Prevention','Health Promotion & Education','Epidemiology','Maternal & Child Health','Environmental Health','School Health','Occupational Health'],
+  student_pharmacy: ['Clinical Pharmacy','Community Pharmacy','Industrial Pharmacy','Pharmaceutical Sciences','Pharmacology'],
+  student_dental: ['General Dentistry','Oral Surgery','Orthodontics','Pediatric Dentistry','Periodontics','Endodontics','Prosthodontics'],
+  student_physio: ['Musculoskeletal','Neurological','Cardiorespiratory','Pediatric Physiotherapy','Sports & Exercise','Community Rehabilitation'],
+  student_radiography: ['Diagnostic Radiography','Therapeutic Radiography','Nuclear Medicine','Ultrasound','MRI'],
+  student_med_lab: ['Hematology','Microbiology','Chemical Pathology','Histopathology','Blood Transfusion Science','Immunology'],
+  student_biomedical: ['Clinical Biochemistry','Medical Microbiology','Immunology','Genetics','Pharmacology Research'],
+  student_optometry: ['General Optometry','Pediatric Optometry','Low Vision','Contact Lens Practice','Community Optometry'],
+  student_nutrition: ['Clinical Nutrition','Community Nutrition','Sports Nutrition','Food Science','Public Health Nutrition'],
+  student_ot: ['Physical Rehabilitation','Mental Health OT','Pediatric OT','Community OT','Geriatric OT'],
+  student_health_info: ['Health Records Management','Health Informatics','Medical Coding','Healthcare Data Analytics'],
+  student_env_health: ['Food Safety & Hygiene','Waste Management','Occupational Health & Safety','Vector Control','Water & Sanitation'],
+  student_slt: ['Pediatric Speech Therapy','Adult Neurological','Voice Disorders','Fluency Disorders','Augmentative Communication'],
+  pro_junior: ['Intern / Houseman','General Practice','Internal Medicine','Surgery','Pediatrics','Obstetrics & Gynecology','Psychiatry','Emergency Medicine','Anaesthesia','Family Medicine'],
+  pro_senior: ['General Medicine','Cardiology','Surgery','Pediatrics','Obstetrics & Gynecology','Psychiatry','Neurology','Oncology','Emergency Medicine','Nephrology','Endocrinology','Infectious Disease'],
+  pro_nurse: ['General Nursing','ICU / Critical Care','Mental Health Nursing','Oncology Nursing','Accident & Emergency'],
+  pro_midwife: ['Hospital Midwifery','Community Midwifery','High Risk Obstetrics','Neonatal Care'],
+  pro_community_health: ['Maternal & Child Health','Disease Surveillance','Immunization Programs'],
+  pro_pharmacist: ['Hospital Pharmacy','Community Pharmacy','Clinical Pharmacy','Oncology Pharmacy'],
+  pro_paramedic: ['Advanced Life Support','Critical Care Paramedic','Community Paramedicine'],
+  pro_public_health: ['Epidemiology','Disease Control','Global Health'],
+  pro_dental: ['General Dentistry','Oral Surgery','Orthodontics','Periodontics'],
+  pro_physio: ['Musculoskeletal','Neurological','Cardiorespiratory','Sports & Exercise'],
+  pro_radiographer: ['Diagnostic','Therapeutic','Nuclear Medicine','Ultrasound','MRI'],
+  pro_med_lab: ['Haematology','Microbiology','Chemical Pathology','Histopathology','Blood Transfusion'],
+  pro_optometrist: ['General Optometry','Paediatric Optometry','Low Vision','Contact Lens'],
+  pro_nutritionist: ['Clinical Nutrition','Community Nutrition','Sports Nutrition'],
+  pro_ot: ['Physical Rehabilitation','Mental Health OT','Paediatric OT','Geriatric OT'],
+  pro_health_info: ['Health Records','Health Informatics','Medical Coding','Analytics'],
+  pro_env_health: ['Food Safety','Waste Management','Occupational Health','Vector Control','Water & Sanitation'],
+  pro_slt: ['Paediatric','Adult Neurological','Voice Disorders','Fluency','AAC'],
+};
+const ROLE_LABELS = {};
+[...STUDENT_ROLES, ...PROFESSIONAL_ROLES].forEach(r => { ROLE_LABELS[r.id] = r.label; });
+
+let _pendingRole = null;
+let _pendingSubRole = null;
+
+function _buildRoleGrid(containerId, roles) {
+  const grid = document.getElementById(containerId);
+  grid.innerHTML = '';
+  roles.forEach(r => {
+    const card = document.createElement('div');
+    card.className = 'role-card' + (r.id === currentRole ? ' selected' : '');
+    card.dataset.id = r.id;
+    card.innerHTML = `<span class="role-card-check">✓</span><span class="role-card-icon">${r.icon}</span><span class="role-card-label">${r.label}</span>`;
+    card.onclick = () => {
+      document.querySelectorAll('.role-card').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+      _pendingRole = r.id;
+      document.getElementById('role-continue-btn').disabled = false;
+    };
+    grid.appendChild(card);
+  });
+}
+
+function openRoleModal() {
+  _pendingRole = null;
+  _pendingSubRole = null;
+  // Show screen 1, hide screen 2
+  document.getElementById('role-screen-1').style.display = 'block';
+  document.getElementById('role-screen-2').style.display = 'none';
+  document.getElementById('role-continue-btn').disabled = true;
+  _buildRoleGrid('student-grid', STUDENT_ROLES);
+  _buildRoleGrid('pro-grid', PROFESSIONAL_ROLES);
+  // Pre-select current role
+  document.querySelectorAll('.role-card').forEach(c => {
+    if (c.dataset.id === currentRole) {
+      c.classList.add('selected');
+      _pendingRole = currentRole;
+      document.getElementById('role-continue-btn').disabled = false;
+    }
+  });
+  document.getElementById('role-modal').classList.add('open');
+}
+
+function closeRoleModal(e) {
+  if (!e || e.target === document.getElementById('role-modal')) {
+    document.getElementById('role-modal').classList.remove('open');
+  }
+}
+
+function goToSpecialties() {
+  if (!_pendingRole) return;
+  const specs = ROLE_SPECIALTIES[_pendingRole] || [];
+  // Build spec list
+  const list = document.getElementById('spec-list');
+  list.innerHTML = '';
+  _pendingSubRole = null;
+  document.getElementById('spec-go-btn').disabled = true;
+  document.getElementById('role-pill').textContent = ROLE_LABELS[_pendingRole] || _pendingRole;
+  specs.forEach(s => {
+    const item = document.createElement('div');
+    item.className = 'spec-item';
+    item.innerHTML = `<span>${s}</span><span class="spec-check">✓</span>`;
+    item.onclick = () => {
+      document.querySelectorAll('.spec-item').forEach(i => i.classList.remove('selected'));
+      item.classList.add('selected');
+      _pendingSubRole = s;
+      document.getElementById('spec-go-btn').disabled = false;
+    };
+    list.appendChild(item);
+  });
+  document.getElementById('role-screen-1').style.display = 'none';
+  const s2 = document.getElementById('role-screen-2');
+  s2.style.display = 'flex';
+}
+
+function backToRoles() {
+  document.getElementById('role-screen-2').style.display = 'none';
+  document.getElementById('role-screen-1').style.display = 'block';
+}
+
+function confirmRoleSelection() {
+  if (!_pendingRole) return;
+  const label = ROLE_LABELS[_pendingRole] || _pendingRole;
+  const subLabel = _pendingSubRole ? ` · ${_pendingSubRole}` : '';
+  currentRole = _pendingRole;
+  document.getElementById('role-label').textContent = label + subLabel;
+  closeRoleModal();
+  // Show confirmation toast
+  const toast = document.createElement('div');
+  toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#0a5f52;color:#fff;padding:10px 18px;border-radius:20px;font-size:13px;font-weight:600;z-index:200;box-shadow:0 4px 12px rgba(0,0,0,0.2)';
+  toast.textContent = `✓ Role set: ${label}${subLabel}`;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 2500);
+}
+
+// ── Input auto-resize ──────────────────────────────────
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
+}
+
+// ── Send message ───────────────────────────────────────
+function sendSuggestion(text) {
+  document.getElementById('user-input').value = text;
+  handleSend();
+}
+
+async function handleSend() {
+  const input = document.getElementById('user-input');
+  const text = input.value.trim();
+  if (!text) return;
+
+  input.value = '';
+  input.style.height = 'auto';
+
+  // Hide empty state
+  const emptyState = document.getElementById('empty-state');
+  if (emptyState) emptyState.remove();
+
+  // Add user message
+  appendMessage('user', text, [], false);
+
+  // Add to history
+  sessionHistory.push({ q: text, time: new Date() });
+  updateHistory();
+
+  // Disable send button
+  document.getElementById('send-btn').disabled = true;
+
+  // Stream AI response
+  const emergency = isEmergency(text);
+  const matched = matchResponse(text) || getGenericResponse(text);
+  const finalEmergency = emergency || matched.emergency;
+
+  await streamResponse(matched.answer, matched.citations, finalEmergency, text);
+
+  document.getElementById('send-btn').disabled = false;
+  todayCount++;
+  document.getElementById('today-count').textContent = todayCount;
+}
+
+async function streamResponse(html, citations, emergency, question) {
+  const chatArea = document.getElementById('chat-area');
+  const msgId = 'msg-' + Date.now();
+
+  // Create message container
+  const msgDiv = document.createElement('div');
+  msgDiv.className = 'message assistant';
+  msgDiv.id = msgId;
+
+  if (emergency) {
+    const banner = document.createElement('div');
+    banner.className = 'emergency-banner';
+    banner.innerHTML = `
+      <div class="emergency-title">⚠️ Emergency Resources</div>
+      <div class="emergency-body">If this is a medical emergency, contact emergency services immediately.</div>
+      <div class="emergency-btns">
+        <button class="emergency-btn primary" onclick="window.open('tel:911')">Call 911</button>
+        <button class="emergency-btn outline" onclick="window.open('https://www.who.int/emergencies')">WHO Resources</button>
+      </div>`;
+    msgDiv.appendChild(banner);
+  }
+
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.innerHTML = '<span class="cursor"></span>';
+  msgDiv.appendChild(bubble);
+
+  const timeEl = document.createElement('div');
+  timeEl.className = 'msg-time';
+  timeEl.textContent = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+  msgDiv.appendChild(timeEl);
+
+  chatArea.appendChild(msgDiv);
+  chatArea.scrollTop = chatArea.scrollHeight;
+
+  // Simulate streaming: reveal HTML char by char (fast)
+  const stripped = html; // We'll insert as HTML progressively
+  let i = 0;
+  const chars = [];
+  // Parse to text nodes for streaming simulation
+  const temp = document.createElement('div');
+  temp.innerHTML = html;
+  const plainText = temp.textContent;
+
+  // Fast stream: reveal full HTML in chunks
+  const words = html.split(/(?<=\s)/);
+  bubble.innerHTML = '';
+  const cursor = document.createElement('span');
+  cursor.className = 'cursor';
+
+  let rendered = '';
+  for (let wi = 0; wi < words.length; wi++) {
+    rendered += words[wi];
+    bubble.innerHTML = rendered;
+    bubble.appendChild(cursor);
+    chatArea.scrollTop = chatArea.scrollHeight;
+    await sleep(18);
+  }
+
+  // Finalise — remove cursor, add citations
+  cursor.remove();
+  bubble.innerHTML = rendered;
+
+  if (citations && citations.length) {
+    const citeDiv = document.createElement('div');
+    citeDiv.className = 'citations';
+    let open = false;
+    citeDiv.innerHTML = `<div class="citations-toggle" onclick="toggleCitations(this)">▶ ${citations.length} source${citations.length>1?'s':''}</div><div class="citations-list" style="display:none"></div>`;
+    const list = citeDiv.querySelector('.citations-list');
+    citations.forEach((c, i) => {
+      list.innerHTML += `<div class="citation-item">
+        <div class="citation-name">${i+1}. ${c.name}</div>
+        <div class="citation-meta">
+          ${c.section ? `<span>${c.section}</span>` : ''}
+          ${c.grade ? `<span class="grade-badge">Grade ${c.grade}</span>` : ''}
+        </div>
+        ${c.url ? `<a class="citation-url" href="${c.url}" target="_blank">${c.url}</a>` : ''}
+      </div>`;
+    });
+    bubble.appendChild(citeDiv);
+  }
+
+  chatArea.scrollTop = chatArea.scrollHeight;
+
+  // Add flashcard
+  addFlashcard(question, stripped, citations[0]?.name || 'Aboy AI');
+}
+
+function toggleCitations(el) {
+  const list = el.nextElementSibling;
+  const open = list.style.display !== 'none';
+  list.style.display = open ? 'none' : 'flex';
+  el.textContent = (open ? '▶' : '▼') + el.textContent.slice(1);
+}
+
+function appendMessage(role, text, citations, emergency) {
+  const chatArea = document.getElementById('chat-area');
+  const msgDiv = document.createElement('div');
+  msgDiv.className = 'message ' + role;
+  msgDiv.innerHTML = `
+    <div class="bubble">${text}</div>
+    <div class="msg-time">${new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</div>`;
+  chatArea.appendChild(msgDiv);
+  chatArea.scrollTop = chatArea.scrollHeight;
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ── Flashcards ─────────────────────────────────────────
+function addFlashcard(question, answerHtml, source) {
+  flashcards.push({ question, answerHtml, source });
+  renderFlashcards();
+}
+
+function renderFlashcards() {
+  const list = document.getElementById('flashcard-list');
+  document.getElementById('flashcard-count').textContent = flashcards.length + ' flashcard' + (flashcards.length !== 1 ? 's' : '');
+
+  if (flashcards.length === 0) return;
+
+  list.innerHTML = flashcards.map((f, i) => `
+    <div class="flashcard" onclick="flipCard(this)">
+      <div class="flashcard-num">Card #${i+1} — tap to reveal</div>
+      <div class="flashcard-q">${f.question}</div>
+      <div class="flashcard-a">
+        ${f.answerHtml}
+        <div class="flashcard-source">Source: ${f.source}</div>
+      </div>
+    </div>`).join('');
+}
+
+function flipCard(el) {
+  el.classList.toggle('flipped');
+  const hint = el.querySelector('.flashcard-num');
+  hint.textContent = el.classList.contains('flipped')
+    ? hint.textContent.replace('tap to reveal','tap to hide')
+    : hint.textContent.replace('tap to hide','tap to reveal');
+}
+
+// ── History ────────────────────────────────────────────
+function updateHistory() {
+  const list = document.getElementById('history-list');
+  if (sessionHistory.length === 0) return;
+
+  list.innerHTML = [...sessionHistory].reverse().map(h => `
+    <div class="history-item">
+      <div class="history-q">${h.q}</div>
+      <div class="history-meta">${h.time.toLocaleString()}</div>
+    </div>`).join('');
+}
+</script>
+</body>
+</html>
