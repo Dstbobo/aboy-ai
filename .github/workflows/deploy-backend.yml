@@ -21,79 +21,53 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ── Path A: serviceConnect + deploy from GitHub commit (best) ───────
-      # Links the GitHub repo to Railway and builds from the latest commit.
-      # Works if RAILWAY_TOKEN has access to the GitHub repo via Railway OAuth.
-      - name: Connect GitHub repo and deploy from commit
-        id: github_deploy
-        continue-on-error: true
-        run: |
-          COMMIT="${{ github.sha }}"
-          echo "Deploying commit $COMMIT"
-
-          # 1. Connect service to GitHub repo (idempotent — safe to call repeatedly)
-          CONNECT=$(curl -s -X POST "$RAILWAY_API" \
-            -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -d "{\"query\":\"mutation { serviceConnect(id: \\\"$SERVICE_ID\\\", input: { branch: \\\"main\\\", repo: \\\"Dstbobo/aboy-ai\\\", rootDirectory: \\\"backend\\\" }) { id } }\"}")
-          echo "Connect response: $CONNECT"
-
-          # 2. Deploy from the latest commit
-          DEPLOY=$(curl -s -X POST "$RAILWAY_API" \
-            -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -d "{\"query\":\"mutation { serviceInstanceDeployV2(commitSha: \\\"$COMMIT\\\", environmentId: \\\"$ENV_ID\\\", serviceId: \\\"$SERVICE_ID\\\") }\"}")
-          echo "Deploy response: $DEPLOY"
-
-          if echo "$DEPLOY" | grep -q '"errors"'; then
-            echo "github_deploy_ok=false" >> $GITHUB_OUTPUT
-            exit 1
-          fi
-          echo "github_deploy_ok=true" >> $GITHUB_OUTPUT
-
-      # ── Path B: Mint project token then railway up ───────────────────────
-      # Falls back if Path A fails. Mints a project token via GraphQL
-      # (works with team tokens) and uploads local files via railway up.
-      - name: Mint project token
-        if: steps.github_deploy.outcome == 'failure'
+      # Step 1: Mint a short-lived project token using the team/API token.
+      # projectTokenCreate returns String! directly — no subfield selection.
+      - name: Mint Railway project token
         id: mint
         run: |
-          # projectTokenCreate returns String! directly — no { token } subfield
           RESPONSE=$(curl -s -X POST "$RAILWAY_API" \
             -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}" \
             -H "Content-Type: application/json" \
             -d "{\"query\":\"mutation { projectTokenCreate(input: { projectId: \\\"$PROJECT_ID\\\", environmentId: \\\"$ENV_ID\\\", name: \\\"gha-${{ github.run_id }}\\\" }) }\"}")
-          echo "Mint response: $RESPONSE"
-          # Token is returned as: {"data":{"projectTokenCreate":"<value>"}}
+          echo "GraphQL response: $RESPONSE"
+          # Response shape: {"data":{"projectTokenCreate":"<token>"}}
           PROJECT_TOKEN=$(echo "$RESPONSE" | grep -o '"projectTokenCreate":"[^"]*"' | cut -d'"' -f4)
           if [ -z "$PROJECT_TOKEN" ]; then
-            echo "Could not mint project token. Response: $RESPONSE"
+            echo "::error::Could not mint project token. Full response: $RESPONSE"
             exit 1
           fi
+          echo "::add-mask::$PROJECT_TOKEN"
           echo "project_token=$PROJECT_TOKEN" >> $GITHUB_OUTPUT
-          echo "Minted project token successfully"
+          echo "✅ Project token minted"
 
+      # Step 2: Install Railway CLI and upload backend files.
       - name: Install Railway CLI
-        if: steps.github_deploy.outcome == 'failure' && steps.mint.outcome == 'success'
         run: npm install -g @railway/cli
 
-      - name: Deploy via railway up
-        if: steps.github_deploy.outcome == 'failure' && steps.mint.outcome == 'success'
+      - name: Deploy backend via railway up
         working-directory: backend
         env:
           RAILWAY_TOKEN: ${{ steps.mint.outputs.project_token }}
           RAILWAY_PROJECT_ID: ${{ env.PROJECT_ID }}
           RAILWAY_ENVIRONMENT_ID: ${{ env.ENV_ID }}
           RAILWAY_SERVICE_ID: ${{ env.SERVICE_ID }}
-        run: railway up --detach
-
-      # ── Verify ─────────────────────────────────────────────────────────
-      - name: Wait and verify health
         run: |
-          echo "Waiting 15s for Railway to start build..."
-          sleep 15
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            https://fantastic-possibility-production-f4fa.up.railway.app/health \
-            --max-time 10)
-          echo "Health: HTTP $STATUS"
-          echo "Build logs: https://railway.app/project/$PROJECT_ID"
+          echo "Uploading backend to Railway service $SERVICE_ID..."
+          railway up --detach
+          echo "✅ Upload complete — Railway is building"
+
+      # Step 3: Verify the new code is live (health endpoint gets "auth":"httpx-v2").
+      - name: Wait for Railway to finish building
+        run: |
+          echo "Waiting up to 5 minutes for Railway build to complete..."
+          for i in $(seq 1 10); do
+            sleep 30
+            HEALTH=$(curl -s https://fantastic-possibility-production-f4fa.up.railway.app/health --max-time 10)
+            echo "[$i/10] $HEALTH"
+            if echo "$HEALTH" | grep -q "httpx-v2"; then
+              echo "✅ New code is live!"
+              exit 0
+            fi
+          done
+          echo "⚠️  Build may still be in progress. Check Railway dashboard."
