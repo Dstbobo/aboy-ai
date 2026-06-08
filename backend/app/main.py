@@ -73,21 +73,54 @@ def create_app() -> FastAPI:
         sql = sql_path.read_text(encoding="utf-8")
 
         # Parse DB password from env or hard-code for one-shot use
-        db_password = os.environ.get("SUPABASE_DB_PASSWORD", "452345Dst@ff")
-        db_host     = os.environ.get("SUPABASE_DB_HOST", "db.szsdvkziqskrfveuemsi.supabase.co")
+        import socket
+        db_password  = os.environ.get("SUPABASE_DB_PASSWORD", "452345Dst@ff")
+        project_ref  = "szsdvkziqskrfveuemsi"
+        direct_host  = f"db.{project_ref}.supabase.co"
 
-        try:
-            conn = await asyncpg.connect(
-                host=db_host,
-                port=5432,
-                user="postgres",
-                password=db_password,
-                database="postgres",
-                ssl="require",
-                timeout=30,
-            )
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"DB connection failed: {e}")
+        # Build candidate connection configs — direct + all pooler regions, IPv4 forced
+        candidates = []
+        for host, port, user in [
+            (direct_host, 5432, "postgres"),
+            (direct_host, 6543, "postgres"),
+            (f"aws-0-us-east-1.pooler.supabase.com",    6543, f"postgres.{project_ref}"),
+            (f"aws-0-us-east-1.pooler.supabase.com",    5432, f"postgres.{project_ref}"),
+            (f"aws-0-eu-west-1.pooler.supabase.com",    6543, f"postgres.{project_ref}"),
+            (f"aws-0-eu-central-1.pooler.supabase.com", 6543, f"postgres.{project_ref}"),
+            (f"aws-0-ap-southeast-1.pooler.supabase.com", 6543, f"postgres.{project_ref}"),
+            (f"aws-0-us-west-2.pooler.supabase.com",    6543, f"postgres.{project_ref}"),
+        ]:
+            # Resolve to IPv4 only to avoid ENETUNREACH on IPv6-less containers
+            try:
+                addrs = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
+                if addrs:
+                    ipv4 = addrs[0][4][0]
+                    candidates.append((ipv4, port, user, host))
+            except Exception:
+                pass  # hostname didn't resolve — skip
+
+        conn = None
+        last_err = "No candidates resolved"
+        for ipv4, port, user, orig_host in candidates:
+            try:
+                conn = await asyncpg.connect(
+                    host=ipv4,
+                    port=port,
+                    user=user,
+                    password=db_password,
+                    database="postgres",
+                    ssl="require",
+                    server_settings={"host": orig_host},
+                    timeout=15,
+                )
+                logger.info("DB connected via %s:%s (resolved %s)", orig_host, port, ipv4)
+                break
+            except Exception as e:
+                last_err = f"{orig_host}:{port} -> {e}"
+                logger.warning("DB attempt failed: %s", last_err)
+
+        if conn is None:
+            raise HTTPException(status_code=500, detail=f"DB connection failed: {last_err}")
 
         try:
             await conn.execute(sql)
