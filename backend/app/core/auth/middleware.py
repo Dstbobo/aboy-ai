@@ -37,10 +37,12 @@ async def get_current_user(
     )
 
     try:
-        # Supabase JWTs are signed with the JWT secret (HS256); decode without audience check
+        # Supabase JWTs are signed with SUPABASE_JWT_SECRET (HS256)
+        # Fall back to anon_key if jwt_secret not configured (dev/testing only)
+        signing_key = settings.supabase_jwt_secret or settings.supabase_anon_key
         payload = jwt.decode(
             token,
-            settings.supabase_anon_key,
+            signing_key,
             algorithms=["HS256"],
             options={"verify_aud": False},
         )
