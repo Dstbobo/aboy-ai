@@ -7,6 +7,12 @@ on:
       - 'backend/**'
   workflow_dispatch:
 
+env:
+  PROJECT_ID: 1b6fa081-85c8-4d73-b0c9-c9488fac29a6
+  ENV_ID: 74fa354a-77ce-4c23-9a50-1a2cd41c40a9
+  SERVICE_ID: 9d7c9935-1da8-4eda-8d72-90ad2d19d297
+  RAILWAY_API: https://backboard.railway.app/graphql/v2
+
 jobs:
   deploy:
     name: Deploy to Railway
@@ -15,52 +21,79 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Railway CLI
-        run: npm install -g @railway/cli
-
-      # Step 1: try railway up with the token as-is (works if it's a project token)
-      - name: Deploy (project token path)
-        id: direct_deploy
+      # ── Path A: serviceConnect + deploy from GitHub commit (best) ───────
+      # Links the GitHub repo to Railway and builds from the latest commit.
+      # Works if RAILWAY_TOKEN has access to the GitHub repo via Railway OAuth.
+      - name: Connect GitHub repo and deploy from commit
+        id: github_deploy
         continue-on-error: true
-        working-directory: backend
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-          RAILWAY_PROJECT_ID: 1b6fa081-85c8-4d73-b0c9-c9488fac29a6
-          RAILWAY_ENVIRONMENT_ID: 74fa354a-77ce-4c23-9a50-1a2cd41c40a9
-          RAILWAY_SERVICE_ID: 9d7c9935-1da8-4eda-8d72-90ad2d19d297
-        run: railway up --detach
-
-      # Step 2: if that failed (team token), mint a project token via GraphQL then redeploy
-      - name: Mint project token from team token
-        if: steps.direct_deploy.outcome == 'failure'
-        id: mint_token
         run: |
-          PROJECT_TOKEN=$(curl -s -X POST https://backboard.railway.app/graphql/v2 \
+          COMMIT="${{ github.sha }}"
+          echo "Deploying commit $COMMIT"
+
+          # 1. Connect service to GitHub repo (idempotent — safe to call repeatedly)
+          CONNECT=$(curl -s -X POST "$RAILWAY_API" \
             -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}" \
             -H "Content-Type: application/json" \
-            -d '{
-              "query": "mutation { projectTokenCreate(projectId: \"1b6fa081-85c8-4d73-b0c9-c9488fac29a6\", environmentId: \"74fa354a-77ce-4c23-9a50-1a2cd41c40a9\", name: \"gha-deploy\") { token } }"
-            }' | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+            -d "{\"query\":\"mutation { serviceConnect(id: \\\"$SERVICE_ID\\\", input: { branch: \\\"main\\\", repo: \\\"Dstbobo/aboy-ai\\\", rootDirectory: \\\"backend\\\" }) { id } }\"}")
+          echo "Connect response: $CONNECT"
+
+          # 2. Deploy from the latest commit
+          DEPLOY=$(curl -s -X POST "$RAILWAY_API" \
+            -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"query\":\"mutation { serviceInstanceDeployV2(commitSha: \\\"$COMMIT\\\", environmentId: \\\"$ENV_ID\\\", serviceId: \\\"$SERVICE_ID\\\") }\"}")
+          echo "Deploy response: $DEPLOY"
+
+          if echo "$DEPLOY" | grep -q '"errors"'; then
+            echo "github_deploy_ok=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          echo "github_deploy_ok=true" >> $GITHUB_OUTPUT
+
+      # ── Path B: Mint project token then railway up ───────────────────────
+      # Falls back if Path A fails. Mints a project token via GraphQL
+      # (works with team tokens) and uploads local files via railway up.
+      - name: Mint project token
+        if: steps.github_deploy.outcome == 'failure'
+        id: mint
+        run: |
+          # projectTokenCreate returns String! directly — no { token } subfield
+          RESPONSE=$(curl -s -X POST "$RAILWAY_API" \
+            -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"query\":\"mutation { projectTokenCreate(input: { projectId: \\\"$PROJECT_ID\\\", environmentId: \\\"$ENV_ID\\\", name: \\\"gha-${{ github.run_id }}\\\" }) }\"}")
+          echo "Mint response: $RESPONSE"
+          # Token is returned as: {"data":{"projectTokenCreate":"<value>"}}
+          PROJECT_TOKEN=$(echo "$RESPONSE" | grep -o '"projectTokenCreate":"[^"]*"' | cut -d'"' -f4)
           if [ -z "$PROJECT_TOKEN" ]; then
-            echo "Failed to mint project token"
+            echo "Could not mint project token. Response: $RESPONSE"
             exit 1
           fi
           echo "project_token=$PROJECT_TOKEN" >> $GITHUB_OUTPUT
+          echo "Minted project token successfully"
 
-      - name: Deploy (team token → minted project token path)
-        if: steps.direct_deploy.outcome == 'failure' && steps.mint_token.outcome == 'success'
+      - name: Install Railway CLI
+        if: steps.github_deploy.outcome == 'failure' && steps.mint.outcome == 'success'
+        run: npm install -g @railway/cli
+
+      - name: Deploy via railway up
+        if: steps.github_deploy.outcome == 'failure' && steps.mint.outcome == 'success'
         working-directory: backend
         env:
-          RAILWAY_TOKEN: ${{ steps.mint_token.outputs.project_token }}
-          RAILWAY_PROJECT_ID: 1b6fa081-85c8-4d73-b0c9-c9488fac29a6
-          RAILWAY_ENVIRONMENT_ID: 74fa354a-77ce-4c23-9a50-1a2cd41c40a9
-          RAILWAY_SERVICE_ID: 9d7c9935-1da8-4eda-8d72-90ad2d19d297
+          RAILWAY_TOKEN: ${{ steps.mint.outputs.project_token }}
+          RAILWAY_PROJECT_ID: ${{ env.PROJECT_ID }}
+          RAILWAY_ENVIRONMENT_ID: ${{ env.ENV_ID }}
+          RAILWAY_SERVICE_ID: ${{ env.SERVICE_ID }}
         run: railway up --detach
 
-      - name: Verify health
+      # ── Verify ─────────────────────────────────────────────────────────
+      - name: Wait and verify health
         run: |
-          sleep 10
+          echo "Waiting 15s for Railway to start build..."
+          sleep 15
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            https://fantastic-possibility-production-f4fa.up.railway.app/health)
-          echo "Health check: HTTP $STATUS"
-          [ "$STATUS" = "200" ] && echo "✅ Backend healthy" || echo "⚠️ Backend not yet ready (may still be deploying)"
+            https://fantastic-possibility-production-f4fa.up.railway.app/health \
+            --max-time 10)
+          echo "Health: HTTP $STATUS"
+          echo "Build logs: https://railway.app/project/$PROJECT_ID"
