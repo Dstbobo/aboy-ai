@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   FlatList,
@@ -6,11 +6,9 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
-import { Audio } from 'expo-av';
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { OfflineBanner } from '@/components/shared/OfflineBanner';
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton';
@@ -30,8 +28,6 @@ const HEADER_HEIGHT = 56;
 export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const [inputText, setInputText] = useState('');
-  const [isRecording, setIsRecording] = useState(false);
-  const recordingRef = useRef<Audio.Recording | null>(null);
 
   const user = useAuthStore((s) => s.user);
   const {
@@ -76,66 +72,15 @@ export default function ChatScreen() {
     }
   }
 
-  // ── Voice recording (expo-av): hold mic to record, release to stop & send ──
-  async function startRecording() {
-    try {
-      const perm = await Audio.requestPermissionsAsync();
-      if (!perm.granted) {
-        Alert.alert('Microphone needed', 'Please allow microphone access to record voice questions.');
-        return;
-      }
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY,
-      );
-      recordingRef.current = recording;
-      setIsRecording(true);
-    } catch {
-      setIsRecording(false);
-    }
-  }
-
-  async function stopRecording() {
-    const recording = recordingRef.current;
-    if (!recording) {
-      setIsRecording(false);
-      return;
-    }
-    setIsRecording(false);
-    recordingRef.current = null;
-    try {
-      await recording.stopAndUnloadAsync();
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
-      const uri = recording.getURI();
-      if (uri) {
-        // Audio captured and "sent" into the conversation. On-device speech-to-
-        // text isn't wired yet, so we surface the voice note and prompt the user
-        // to type for an AI answer.
-        addUserMessage('🎤 Voice message');
-        addAssistantMessage(
-          'voice' + Date.now(),
-          'I received your voice message. Voice transcription is coming soon — please type your question for now and I’ll answer with cited sources.',
-          [],
-          false,
-        );
-      }
-    } catch {
-      // swallow — recording already torn down
-    }
-  }
-
   const roleLabel = ROLE_LABELS[user?.role as UserRole] ?? 'Student';
   const data = [...messages].reverse(); // inverted list shows newest at the bottom
+  const canSend = inputText.trim().length > 0 && !isLoading;
 
   return (
     <AppScreen withPlusSheet>
       <SafeAreaView style={styles.safe} edges={['bottom']}>
         <KeyboardAvoidingView
           style={styles.flex}
-          // keyboard-controller's KeyboardAvoidingView works on BOTH platforms.
-          // "padding" is the reliable behavior on Android (unlike "height").
-          // The offset covers the custom top bar + status bar that sit above
-          // this view, so the input bar lands exactly on top of the keyboard.
           behavior="padding"
           keyboardVerticalOffset={insets.top + HEADER_HEIGHT}
         >
@@ -150,9 +95,6 @@ export default function ChatScreen() {
               <Text style={styles.emptySubtitle}>
                 Ask any healthcare or study question.{'\n'}Every answer is cited from verified sources.
               </Text>
-              <View style={styles.roleChip}>
-                <Text style={styles.roleText}>{roleLabel}</Text>
-              </View>
             </View>
           ) : (
             <FlatList
@@ -168,14 +110,10 @@ export default function ChatScreen() {
 
           {isLoading && <LoadingSkeleton />}
 
-          {/* Input bar — directly below the list, inside the same KAV, no absolute positioning */}
-          <View style={styles.inputBar}>
-            <TouchableOpacity style={styles.iconBtn} onPress={openPlusSheet}>
-              <Text style={styles.plusIcon}>＋</Text>
-            </TouchableOpacity>
-
+          {/* Floating rounded input card — Claude style */}
+          <View style={styles.inputCard}>
             <TextInput
-              style={styles.input}
+              style={styles.cardInput}
               placeholder="Ask a healthcare question..."
               placeholderTextColor={COLORS.textSecondary}
               multiline
@@ -183,17 +121,29 @@ export default function ChatScreen() {
               onChangeText={setInputText}
             />
 
-            <TouchableOpacity
-              onPressIn={startRecording}
-              onPressOut={stopRecording}
-              style={styles.iconBtn}
-            >
-              <Text style={styles.micIcon}>{isRecording ? '🔴' : '🎤'}</Text>
-            </TouchableOpacity>
+            <View style={styles.cardBottomRow}>
+              {/* Left: + pill */}
+              <TouchableOpacity style={styles.plusPill} onPress={openPlusSheet} hitSlop={6}>
+                <Text style={styles.plusPillIcon}>＋</Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity onPress={sendMessage} style={styles.sendBtn}>
-              <Text style={styles.sendIcon}>↑</Text>
-            </TouchableOpacity>
+              {/* Center: model / role pill */}
+              <View style={styles.centerWrap}>
+                <View style={styles.modelPill}>
+                  <Text style={styles.modelPillText} numberOfLines={1}>{roleLabel}</Text>
+                </View>
+              </View>
+
+              {/* Right: send circle */}
+              <TouchableOpacity
+                style={[styles.sendCircle, !canSend && styles.sendCircleOff]}
+                onPress={sendMessage}
+                disabled={!canSend}
+                hitSlop={6}
+              >
+                <Text style={styles.sendArrow}>↑</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -213,38 +163,66 @@ const styles = StyleSheet.create({
   },
   emptyLogoLetter: { color: '#fff', fontSize: 36, fontWeight: '800' },
   emptyTitle: { fontSize: 24, fontWeight: '800', color: COLORS.text, marginBottom: 10 },
-  emptySubtitle: { fontSize: 15, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 22, marginBottom: 20 },
-  roleChip: { backgroundColor: COLORS.secondary, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6 },
-  roleText: { color: COLORS.primary, fontWeight: '600', fontSize: 13 },
+  emptySubtitle: { fontSize: 15, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 22 },
 
-  inputBar: {
+  // Floating rounded white card
+  inputCard: {
+    marginHorizontal: 12,
+    marginTop: 6,
+    marginBottom: 8,
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 10,
+    // shadow / elevation for depth
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+  },
+  cardInput: {
+    fontSize: 16,
+    lineHeight: 22,
+    color: COLORS.text,
+    maxHeight: 120,
+    minHeight: 24,
+    paddingBottom: 8,
+    paddingTop: 2,
+  },
+  cardBottomRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderTopWidth: 0.5,
-    borderTopColor: '#D1D1D6',
-    backgroundColor: '#fff',
   },
-  iconBtn: { padding: 8 },
-  plusIcon: { fontSize: 22, color: COLORS.text, fontWeight: '600' },
-  micIcon: { fontSize: 20 },
-  input: {
-    flex: 1,
-    marginHorizontal: 8,
-    fontSize: 16,
-    maxHeight: 120,
-    color: COLORS.text,
-  },
-  sendBtn: {
-    padding: 8,
-    marginLeft: 2,
-    backgroundColor: COLORS.primary,
-    borderRadius: 18,
-    width: 36,
-    height: 36,
+  plusPill: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#F1F1F3',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  sendIcon: { fontSize: 20, color: '#fff', fontWeight: '700', lineHeight: 22 },
+  plusPillIcon: { fontSize: 20, color: COLORS.text, fontWeight: '600', lineHeight: 22 },
+  centerWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 },
+  modelPill: {
+    backgroundColor: '#F1F1F3',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    maxWidth: '100%',
+  },
+  modelPillText: { fontSize: 13, color: COLORS.textSecondary, fontWeight: '600' },
+  sendCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sendCircleOff: { backgroundColor: '#C7CBD1' },
+  sendArrow: { fontSize: 20, color: '#fff', fontWeight: '800', lineHeight: 22 },
 });
