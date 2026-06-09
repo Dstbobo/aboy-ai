@@ -3,8 +3,9 @@ import * as FileSystem from 'expo-file-system';
 import LiveAudioStream from 'react-native-live-audio-stream';
 
 export const GEMINI_LIVE_URL = process.env.EXPO_PUBLIC_GEMINI_LIVE_URL ?? '';
-// Live API model with audio dialog. Adjust if your key uses a different one.
-const LIVE_MODEL = 'models/gemini-live-2.5-flash-preview';
+// Live API model with native-audio dialog (verified available on this key
+// via ListModels: supports bidiGenerateContent).
+const LIVE_MODEL = 'models/gemini-2.5-flash-native-audio-latest';
 
 export type LiveStatus =
   | 'connecting'
