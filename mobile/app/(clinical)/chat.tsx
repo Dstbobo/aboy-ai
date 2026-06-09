@@ -7,6 +7,7 @@ import {
   Platform,
   Text,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { OfflineBanner } from '@/components/shared/OfflineBanner';
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton';
@@ -20,9 +21,14 @@ import { ROLE_LABELS } from '@/constants/roles';
 import { useAuthStore } from '@/stores/auth.store';
 import type { UserRole } from '@/constants/roles';
 
+// Top bar height defined in AppHeader (56) — used so KeyboardAvoidingView
+// knows how much vertical space sits above the chat body.
+const HEADER_HEIGHT = 56;
+
 export default function ChatScreen() {
   const [input, setInput] = useState('');
   const listRef = useRef<FlatList>(null);
+  const insets = useSafeAreaInsets();
   const user = useAuthStore((s) => s.user);
   const {
     messages,
@@ -77,8 +83,12 @@ export default function ChatScreen() {
     <AppScreen withPlusSheet>
       <KeyboardAvoidingView
         style={styles.flex}
+        // iOS: pad the bottom by the keyboard height (offset accounts for the
+        // custom top bar + status bar). Android: rely on windowSoftInputMode
+        // "resize" (set in app.json) which shrinks the window so the input bar
+        // lifts naturally — adding behavior here would double-compensate.
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
+        keyboardVerticalOffset={insets.top + HEADER_HEIGHT}
       >
         <OfflineBanner />
 
