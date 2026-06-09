@@ -52,12 +52,19 @@ export function VideoMode() {
         const cam = cameraRef.current;
         const session = sessionRef.current;
         if (!cam || !session) return;
-        const photo = await cam.takePictureAsync({ base64: true, quality: 0.3, skipProcessing: true, shutterSound: false } as any);
+        // animateShutter is disabled on the CameraView; also pass options that
+        // avoid the white shutter flash / preview freeze on each capture.
+        const photo = await cam.takePictureAsync({
+          base64: true,
+          quality: 0.3,
+          skipProcessing: true,
+          shutterSound: false,
+        } as any);
         if (photo?.base64) session.sendImageFrame(photo.base64);
       } catch {
         // skip this frame
       }
-    }, 1000);
+    }, 2000); // ~1 frame / 2s — smooth preview, still "sees" the page
   }, []);
 
   const stopStreaming = useCallback(() => {
@@ -133,7 +140,12 @@ export function VideoMode() {
   return (
     <Modal visible={open} animationType="slide" onRequestClose={handleClose}>
       <View style={styles.root}>
-        <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing="back" />
+        <CameraView
+          ref={cameraRef}
+          style={StyleSheet.absoluteFill}
+          facing="back"
+          animateShutter={false}
+        />
 
         <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
           <View style={styles.liveTag}>
