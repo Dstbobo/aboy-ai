@@ -247,9 +247,16 @@ export class LiveSession {
 
   /** Send a single camera frame (base64 JPEG) as realtime video input. */
   sendImageFrame(base64Jpeg: string) {
+    // Never send realtime input before Gemini has acknowledged setup — doing so
+    // breaks the BidiGenerateContent handshake (setupComplete never arrives).
+    if (!this.setupDone) return;
     this.send({
       realtimeInput: { mediaChunks: [{ mimeType: 'image/jpeg', data: base64Jpeg }] },
     });
+  }
+
+  get isReady() {
+    return this.setupDone;
   }
 
   /** User taps to interrupt the AI while it is speaking. */

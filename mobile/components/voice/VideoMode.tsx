@@ -89,7 +89,9 @@ export function VideoMode() {
     const session = new LiveSession(user?.id ?? null, {
       onStatus: (s) => {
         setStatus(s);
-        if (s === 'connected' || s === 'listening') startStreaming();
+        // Only start sending camera frames AFTER Gemini setup completes
+        // (status becomes 'listening'). Sending before that breaks the handshake.
+        if (s === 'listening') startStreaming();
       },
       onTranscript: pushTranscript,
     });
