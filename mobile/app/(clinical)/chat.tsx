@@ -3,13 +3,12 @@ import {
   View,
   FlatList,
   StyleSheet,
-  Platform,
   Text,
   TextInput,
   TouchableOpacity,
   Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { Audio } from 'expo-av';
 import { MessageBubble } from '@/components/chat/MessageBubble';
@@ -25,7 +24,11 @@ import { ROLE_LABELS } from '@/constants/roles';
 import { useAuthStore } from '@/stores/auth.store';
 import type { UserRole } from '@/constants/roles';
 
+// Height of the custom top bar (AppHeader) that sits above the chat body.
+const HEADER_HEIGHT = 56;
+
 export default function ChatScreen() {
+  const insets = useSafeAreaInsets();
   const [inputText, setInputText] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const recordingRef = useRef<Audio.Recording | null>(null);
@@ -129,7 +132,12 @@ export default function ChatScreen() {
       <SafeAreaView style={styles.safe} edges={['bottom']}>
         <KeyboardAvoidingView
           style={styles.flex}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          // keyboard-controller's KeyboardAvoidingView works on BOTH platforms.
+          // "padding" is the reliable behavior on Android (unlike "height").
+          // The offset covers the custom top bar + status bar that sit above
+          // this view, so the input bar lands exactly on top of the keyboard.
+          behavior="padding"
+          keyboardVerticalOffset={insets.top + HEADER_HEIGHT}
         >
           <OfflineBanner />
 
