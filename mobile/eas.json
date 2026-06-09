@@ -21,6 +21,7 @@
         "EXPO_PUBLIC_API_URL": "https://fantastic-possibility-production-f4fa.up.railway.app",
         "EXPO_PUBLIC_SUPABASE_URL": "https://szsdvkziqskrfveuemsi.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN6c2R2a3ppcXNrcmZ2ZXVlbXNpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NzI4NzIsImV4cCI6MjA5NjQ0ODg3Mn0.LV_pp_2fhO3emAC3OySvmM-Su53ymeB05jal4lMEhl4",
+        "EXPO_PUBLIC_GEMINI_LIVE_URL": "wss://REPLACE-WITH-LIVE-SERVICE.up.railway.app",
         "EXPO_PUBLIC_ENV": "mvp"
       }
     },

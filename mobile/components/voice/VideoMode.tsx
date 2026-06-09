@@ -1,63 +1,107 @@
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   Modal,
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  ActivityIndicator,
   ScrollView,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import * as Speech from 'expo-speech';
 import { useUIStore } from '@/stores/ui.store';
-import { analyzeImage } from '@/services/vision.service';
+import { useAuthStore } from '@/stores/auth.store';
+import { LiveSession, type LiveStatus } from '@/services/geminiLive';
 import { COLORS } from '@/constants/theme';
 
-type Phase = 'ready' | 'analyzing' | 'answered';
+interface Turn { role: 'user' | 'assistant'; text: string }
 
 export function VideoMode() {
   const insets = useSafeAreaInsets();
   const open = useUIStore((s) => s.videoModeOpen);
   const closeVideoMode = useUIStore((s) => s.closeVideoMode);
+  const user = useAuthStore((s) => s.user);
   const [permission, requestPermission] = useCameraPermissions();
+
   const cameraRef = useRef<CameraView>(null);
+  const sessionRef = useRef<LiveSession | null>(null);
+  const frameTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
 
-  const [phase, setPhase] = useState<Phase>('ready');
-  const [answer, setAnswer] = useState('');
+  const [status, setStatus] = useState<LiveStatus>('connecting');
+  const [transcript, setTranscript] = useState<Turn[]>([]);
 
-  const handleClose = useCallback(() => {
-    Speech.stop();
-    setPhase('ready');
-    setAnswer('');
-    closeVideoMode();
-  }, [closeVideoMode]);
-
-  const capture = useCallback(async () => {
-    if (!cameraRef.current || phase === 'analyzing') return;
-    try {
-      setPhase('analyzing');
-      setAnswer('');
-      const photo = await cameraRef.current.takePictureAsync({ quality: 0.5, skipProcessing: true });
-      if (!photo?.uri) {
-        setPhase('ready');
-        return;
+  const pushTranscript = useCallback((role: 'user' | 'assistant', text: string) => {
+    setTranscript((prev) => {
+      const last = prev[prev.length - 1];
+      if (last && last.role === role) {
+        const copy = prev.slice();
+        copy[copy.length - 1] = { role, text: (last.text + ' ' + text).trim() };
+        return copy;
       }
-      const text = await analyzeImage(photo.uri);
-      setAnswer(text);
-      setPhase('answered');
-      Speech.speak(stripMarkdown(text), { rate: 1.0 });
-    } catch {
-      setAnswer('Sorry, I could not analyze that image. Please try again.');
-      setPhase('answered');
+      return [...prev, { role, text }];
+    });
+  }, []);
+
+  const startStreaming = useCallback(() => {
+    if (frameTimer.current) return;
+    // Stream ~1 frame per second to the Live session.
+    frameTimer.current = setInterval(async () => {
+      try {
+        const cam = cameraRef.current;
+        const session = sessionRef.current;
+        if (!cam || !session) return;
+        const photo = await cam.takePictureAsync({ base64: true, quality: 0.3, skipProcessing: true, shutterSound: false } as any);
+        if (photo?.base64) session.sendImageFrame(photo.base64);
+      } catch {
+        // skip this frame
+      }
+    }, 1000);
+  }, []);
+
+  const stopStreaming = useCallback(() => {
+    if (frameTimer.current) {
+      clearInterval(frameTimer.current);
+      frameTimer.current = null;
     }
-  }, [phase]);
+  }, []);
+
+  const handleClose = useCallback(async () => {
+    stopStreaming();
+    await sessionRef.current?.close();
+    sessionRef.current = null;
+    setTranscript([]);
+    setStatus('connecting');
+    closeVideoMode();
+  }, [closeVideoMode, stopStreaming]);
+
+  // Open the Live session once the overlay is shown and camera is permitted.
+  useEffect(() => {
+    if (!open || !permission?.granted) return;
+    const session = new LiveSession(user?.id ?? null, {
+      onStatus: (s) => {
+        setStatus(s);
+        if (s === 'connected' || s === 'listening') startStreaming();
+      },
+      onTranscript: pushTranscript,
+    });
+    sessionRef.current = session;
+    session.connect().catch(() => setStatus('error'));
+    return () => {
+      stopStreaming();
+      session.close();
+      sessionRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, permission?.granted]);
+
+  useEffect(() => {
+    scrollRef.current?.scrollToEnd({ animated: true });
+  }, [transcript]);
 
   if (!open) return null;
 
-  // Ask for camera permission if needed
   if (!permission?.granted) {
     return (
       <Modal visible={open} animationType="slide" onRequestClose={handleClose}>
@@ -65,7 +109,7 @@ export function VideoMode() {
           <MaterialCommunityIcons name="camera-outline" size={56} color={COLORS.primary} />
           <Text style={styles.permTitle}>Camera access</Text>
           <Text style={styles.permBody}>
-            Allow camera access to point at textbooks, notes, diagrams or clinical images and ask Aboy AI about them.
+            Allow camera access to point at textbooks, notes, diagrams or clinical images and talk to Aboy AI about them in real time.
           </Text>
           <TouchableOpacity style={styles.permBtn} onPress={requestPermission}>
             <Text style={styles.permBtnText}>Allow camera</Text>
@@ -78,59 +122,43 @@ export function VideoMode() {
     );
   }
 
+  const statusText =
+    status === 'connecting' ? 'Connecting…'
+    : status === 'reconnecting' ? 'Reconnecting…'
+    : status === 'rate_limited' ? 'Busy — retrying…'
+    : status === 'speaking' ? 'Speaking…'
+    : status === 'error' ? 'Connection error'
+    : 'Live — point and talk';
+
   return (
     <Modal visible={open} animationType="slide" onRequestClose={handleClose}>
       <View style={styles.root}>
         <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing="back" />
 
-        {/* Top bar */}
         <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
-          <Text style={styles.topTitle}>Study with camera</Text>
+          <View style={styles.liveTag}>
+            <View style={styles.liveDot} />
+            <Text style={styles.liveText}>{statusText}</Text>
+          </View>
           <TouchableOpacity onPress={handleClose} hitSlop={10}>
             <MaterialCommunityIcons name="close" size={28} color="#fff" />
           </TouchableOpacity>
         </View>
 
-        {/* Answer panel */}
-        {(phase === 'answered' || phase === 'analyzing') && (
-          <View style={[styles.answerPanel, { paddingBottom: insets.bottom + 90 }]}>
-            {phase === 'analyzing' ? (
-              <View style={styles.analyzingRow}>
-                <ActivityIndicator color="#fff" />
-                <Text style={styles.analyzingText}>Looking…</Text>
-              </View>
-            ) : (
-              <ScrollView style={styles.answerScroll}>
-                <Text style={styles.answerText}>{answer}</Text>
-              </ScrollView>
-            )}
+        {transcript.length > 0 && (
+          <View style={[styles.panel, { paddingBottom: insets.bottom + 20 }]}>
+            <ScrollView ref={scrollRef} style={styles.panelScroll}>
+              {transcript.map((t, i) => (
+                <Text key={i} style={t.role === 'user' ? styles.userLine : styles.aiLine}>
+                  {t.role === 'user' ? 'You: ' : 'Aboy: '}{t.text}
+                </Text>
+              ))}
+            </ScrollView>
           </View>
         )}
-
-        {/* Capture button */}
-        <View style={[styles.controls, { paddingBottom: insets.bottom + 20 }]}>
-          <TouchableOpacity
-            style={[styles.captureBtn, phase === 'analyzing' && styles.captureBtnDisabled]}
-            onPress={capture}
-            disabled={phase === 'analyzing'}
-          >
-            <MaterialCommunityIcons name="camera" size={30} color={COLORS.primary} />
-          </TouchableOpacity>
-          <Text style={styles.hint}>Point at a page or image and tap to ask</Text>
-        </View>
       </View>
     </Modal>
   );
-}
-
-function stripMarkdown(md: string): string {
-  return md
-    .replace(/[#*_`>~]/g, '')
-    .replace(/\[(.*?)\]\(.*?\)/g, '$1')
-    .replace(/\|/g, ' ')
-    .replace(/\n{2,}/g, '. ')
-    .replace(/\s{2,}/g, ' ')
-    .trim();
 }
 
 const styles = StyleSheet.create({
@@ -138,31 +166,18 @@ const styles = StyleSheet.create({
   topBar: {
     position: 'absolute', top: 0, left: 0, right: 0, zIndex: 2,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingBottom: 10,
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    paddingHorizontal: 16, paddingBottom: 10, backgroundColor: 'rgba(0,0,0,0.35)',
   },
-  topTitle: { color: '#fff', fontSize: 17, fontWeight: '700' },
-  answerPanel: {
-    position: 'absolute', left: 0, right: 0, bottom: 0,
-    maxHeight: '55%',
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    paddingHorizontal: 18, paddingTop: 16,
+  liveTag: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  liveDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: COLORS.error },
+  liveText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  panel: {
+    position: 'absolute', left: 0, right: 0, bottom: 0, maxHeight: '40%',
+    backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 18, paddingTop: 14,
   },
-  answerScroll: { maxHeight: 240 },
-  answerText: { color: '#fff', fontSize: 15, lineHeight: 22 },
-  analyzingRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  analyzingText: { color: '#fff', fontSize: 15 },
-  controls: {
-    position: 'absolute', left: 0, right: 0, bottom: 0,
-    alignItems: 'center', gap: 8, paddingTop: 12,
-  },
-  captureBtn: {
-    width: 72, height: 72, borderRadius: 36, backgroundColor: '#fff',
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 4, borderColor: 'rgba(255,255,255,0.5)',
-  },
-  captureBtnDisabled: { opacity: 0.6 },
-  hint: { color: 'rgba(255,255,255,0.85)', fontSize: 13 },
+  panelScroll: { maxHeight: 200 },
+  userLine: { color: '#cfe9e3', fontSize: 14, lineHeight: 21, marginBottom: 4 },
+  aiLine: { color: '#fff', fontSize: 14, lineHeight: 21, marginBottom: 8 },
   permRoot: { flex: 1, alignItems: 'center', paddingHorizontal: 32, backgroundColor: '#fff' },
   permTitle: { fontSize: 22, fontWeight: '800', color: COLORS.text, marginTop: 16 },
   permBody: { fontSize: 15, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 22, marginTop: 10 },

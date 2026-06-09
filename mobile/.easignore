@@ -1,0 +1,2 @@
+# Separate Node backend service — not part of the mobile app build
+services/gemini-live-server/

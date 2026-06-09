@@ -10,42 +10,45 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as Speech from 'expo-speech';
-import { useRecorder } from '@/hooks/useRecorder';
 import { useUIStore } from '@/stores/ui.store';
-import { useChatStore } from '@/stores/chat.store';
-import { transcribeAudio } from '@/services/transcribe.service';
-import { sendQuery } from '@/services/query.service';
+import { useAuthStore } from '@/stores/auth.store';
+import { LiveSession, type LiveStatus } from '@/services/geminiLive';
 import { COLORS } from '@/constants/theme';
 
-type Phase = 'idle' | 'listening' | 'thinking' | 'speaking';
 interface Turn { role: 'user' | 'assistant'; text: string }
-
 const BAR_COUNT = 28;
 
 export function VoiceOverlay() {
   const insets = useSafeAreaInsets();
   const open = useUIStore((s) => s.voiceModeOpen);
   const closeVoiceMode = useUIStore((s) => s.closeVoiceMode);
-  const { start, stop } = useRecorder();
-  const { sessionId, setSession, addUserMessage, addAssistantMessage } = useChatStore();
+  const user = useAuthStore((s) => s.user);
 
-  const [phase, setPhase] = useState<Phase>('idle');
+  const [status, setStatus] = useState<LiveStatus>('connecting');
   const [transcript, setTranscript] = useState<Turn[]>([]);
+  const sessionRef = useRef<LiveSession | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
   const levels = useRef<Animated.Value[]>(
     Array.from({ length: BAR_COUNT }, () => new Animated.Value(0.15)),
   ).current;
-  const scrollRef = useRef<ScrollView>(null);
-  const phaseRef = useRef<Phase>('idle');
-  phaseRef.current = phase;
 
-  const animateBar = useCallback(
-    (db: number) => {
-      // metering dB is roughly -160 (silent) .. 0 (loud)
-      const norm = Math.max(0.08, Math.min(1, (db + 60) / 60));
+  const pushTranscript = useCallback((role: 'user' | 'assistant', text: string) => {
+    setTranscript((prev) => {
+      const last = prev[prev.length - 1];
+      if (last && last.role === role) {
+        const copy = prev.slice();
+        copy[copy.length - 1] = { role, text: (last.text + ' ' + text).trim() };
+        return copy;
+      }
+      return [...prev, { role, text }];
+    });
+  }, []);
+
+  const animateLevel = useCallback(
+    (level: number) => {
       const i = Math.floor(Math.random() * BAR_COUNT);
       Animated.timing(levels[i], {
-        toValue: norm,
+        toValue: Math.max(0.1, Math.min(1, level)),
         duration: 120,
         useNativeDriver: false,
       }).start();
@@ -53,77 +56,18 @@ export function VoiceOverlay() {
     [levels],
   );
 
-  const beginListening = useCallback(async () => {
-    setPhase('listening');
-    await start(animateBar);
-  }, [start, animateBar]);
-
-  const handleStopAndProcess = useCallback(async () => {
-    const uri = await stop();
-    if (!uri) {
-      setPhase('idle');
-      return;
-    }
-    setPhase('thinking');
-    try {
-      const text = (await transcribeAudio(uri)).trim();
-      if (!text) {
-        await beginListening();
-        return;
-      }
-      setTranscript((t) => [...t, { role: 'user', text }]);
-      addUserMessage(text);
-
-      const result = await sendQuery(text, sessionId);
-      if (!sessionId) setSession(result.session_id);
-      addAssistantMessage(result.session_id + Date.now(), result.answer, result.citations, result.emergency_triggered);
-
-      const spoken = stripMarkdown(result.answer);
-      setTranscript((t) => [...t, { role: 'assistant', text: result.answer }]);
-      setPhase('speaking');
-      Speech.speak(spoken, {
-        rate: 1.0,
-        onDone: () => {
-          if (phaseRef.current === 'speaking') beginListening();
-        },
-        onStopped: () => {},
-        onError: () => {
-          if (phaseRef.current === 'speaking') beginListening();
-        },
-      });
-    } catch {
-      setTranscript((t) => [...t, { role: 'assistant', text: 'Sorry, I had trouble with that. Let’s try again.' }]);
-      setPhase('idle');
-    }
-  }, [stop, beginListening, sessionId, setSession, addUserMessage, addAssistantMessage]);
-
-  // Center button behaviour depends on phase
-  const onCenterPress = useCallback(() => {
-    if (phase === 'listening') {
-      handleStopAndProcess();
-    } else if (phase === 'speaking') {
-      Speech.stop(); // user interrupts the AI
-      beginListening();
-    } else if (phase === 'idle') {
-      beginListening();
-    }
-  }, [phase, handleStopAndProcess, beginListening]);
-
-  const handleClose = useCallback(async () => {
-    Speech.stop();
-    await stop();
-    setPhase('idle');
-    setTranscript([]);
-    closeVoiceMode();
-  }, [stop, closeVoiceMode]);
-
-  // Auto-start listening when the overlay opens
   useEffect(() => {
-    if (open) {
-      beginListening();
-    }
+    if (!open) return;
+    const session = new LiveSession(user?.id ?? null, {
+      onStatus: setStatus,
+      onTranscript: pushTranscript,
+      onLevel: animateLevel,
+    });
+    sessionRef.current = session;
+    session.connect().catch(() => setStatus('error'));
     return () => {
-      Speech.stop();
+      session.close();
+      sessionRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -132,22 +76,39 @@ export function VoiceOverlay() {
     scrollRef.current?.scrollToEnd({ animated: true });
   }, [transcript]);
 
+  const handleClose = useCallback(async () => {
+    await sessionRef.current?.close();
+    sessionRef.current = null;
+    setTranscript([]);
+    setStatus('connecting');
+    closeVoiceMode();
+  }, [closeVoiceMode]);
+
+  const onCenterPress = useCallback(() => {
+    // Tap to interrupt while the AI is speaking.
+    if (status === 'speaking') sessionRef.current?.interrupt();
+  }, [status]);
+
+  const notConfigured = !sessionRef.current?.isConfigured && status === 'error';
+
   const statusText =
-    phase === 'listening' ? 'Listening… tap to send'
-    : phase === 'thinking' ? 'Thinking…'
-    : phase === 'speaking' ? 'Speaking… tap to interrupt'
-    : 'Tap to talk';
+    notConfigured ? 'Voice service not configured'
+    : status === 'connecting' ? 'Connecting…'
+    : status === 'reconnecting' ? 'Reconnecting…'
+    : status === 'rate_limited' ? 'Busy — retrying…'
+    : status === 'speaking' ? 'Speaking… tap to interrupt'
+    : status === 'error' ? 'Connection error'
+    : 'Listening…';
 
   const centerIcon =
-    phase === 'listening' ? 'stop'
-    : phase === 'speaking' ? 'volume-high'
-    : phase === 'thinking' ? 'dots-horizontal'
+    status === 'speaking' ? 'volume-high'
+    : status === 'connecting' || status === 'reconnecting' ? 'dots-horizontal'
+    : status === 'error' ? 'alert-circle-outline'
     : 'microphone';
 
   return (
     <Modal visible={open} animationType="slide" onRequestClose={handleClose}>
       <View style={[styles.root, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 16 }]}>
-        {/* Header */}
         <View style={styles.header}>
           <Text style={styles.title}>Voice conversation</Text>
           <TouchableOpacity onPress={handleClose} style={styles.closeBtn} hitSlop={10}>
@@ -155,22 +116,22 @@ export function VoiceOverlay() {
           </TouchableOpacity>
         </View>
 
-        {/* Transcript */}
         <ScrollView ref={scrollRef} style={styles.transcript} contentContainerStyle={styles.transcriptContent}>
           {transcript.length === 0 ? (
             <Text style={styles.hint}>
-              Ask a healthcare question out loud. I’ll listen, answer, and speak back.
+              {notConfigured
+                ? 'Set EXPO_PUBLIC_GEMINI_LIVE_URL to your deployed Live proxy to enable realtime voice.'
+                : 'Start talking. I’ll listen and answer out loud, in real time.'}
             </Text>
           ) : (
             transcript.map((turn, i) => (
               <View key={i} style={[styles.bubble, turn.role === 'user' ? styles.userBubble : styles.aiBubble]}>
-                <Text style={turn.role === 'user' ? styles.userText : styles.aiText}>{turn.text}</Text>
+                <Text style={styles.bubbleText}>{turn.text}</Text>
               </View>
             ))
           )}
         </ScrollView>
 
-        {/* Waveform */}
         <View style={styles.waveform}>
           {levels.map((v, i) => (
             <Animated.View
@@ -179,7 +140,7 @@ export function VoiceOverlay() {
                 styles.bar,
                 {
                   height: v.interpolate({ inputRange: [0, 1], outputRange: [6, 72] }),
-                  opacity: phase === 'listening' ? 1 : 0.35,
+                  opacity: status === 'listening' || status === 'speaking' ? 1 : 0.35,
                 },
               ]}
             />
@@ -188,27 +149,15 @@ export function VoiceOverlay() {
 
         <Text style={styles.status}>{statusText}</Text>
 
-        {/* Center control */}
         <TouchableOpacity
-          style={[styles.centerBtn, phase === 'listening' && styles.centerBtnActive]}
+          style={[styles.centerBtn, status === 'speaking' && styles.centerBtnActive]}
           onPress={onCenterPress}
-          disabled={phase === 'thinking'}
         >
           <MaterialCommunityIcons name={centerIcon as any} size={40} color="#fff" />
         </TouchableOpacity>
       </View>
     </Modal>
   );
-}
-
-function stripMarkdown(md: string): string {
-  return md
-    .replace(/[#*_`>~]/g, '')
-    .replace(/\[(.*?)\]\(.*?\)/g, '$1')
-    .replace(/\|/g, ' ')
-    .replace(/\n{2,}/g, '. ')
-    .replace(/\s{2,}/g, ' ')
-    .trim();
 }
 
 const styles = StyleSheet.create({
@@ -222,26 +171,13 @@ const styles = StyleSheet.create({
   bubble: { maxWidth: '90%', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10 },
   userBubble: { alignSelf: 'flex-end', backgroundColor: COLORS.primaryLight },
   aiBubble: { alignSelf: 'flex-start', backgroundColor: 'rgba(255,255,255,0.12)' },
-  userText: { color: '#fff', fontSize: 15, lineHeight: 21 },
-  aiText: { color: '#fff', fontSize: 15, lineHeight: 21 },
-  waveform: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 80,
-    gap: 4,
-    marginVertical: 8,
-  },
+  bubbleText: { color: '#fff', fontSize: 15, lineHeight: 21 },
+  waveform: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 80, gap: 4, marginVertical: 8 },
   bar: { width: 5, borderRadius: 3, backgroundColor: '#fff' },
   status: { color: 'rgba(255,255,255,0.85)', textAlign: 'center', fontSize: 14, marginBottom: 14 },
   centerBtn: {
-    alignSelf: 'center',
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-    backgroundColor: COLORS.primaryLight,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignSelf: 'center', width: 84, height: 84, borderRadius: 42,
+    backgroundColor: COLORS.primaryLight, alignItems: 'center', justifyContent: 'center',
   },
   centerBtnActive: { backgroundColor: COLORS.error },
 });
