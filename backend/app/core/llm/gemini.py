@@ -7,6 +7,7 @@ is not feasible from Expo/React Native audio capture, so the app uses a
 turn-based loop (record -> transcribe -> answer -> speak) built on these
 request/response multimodal calls.
 """
+import asyncio
 import base64
 
 import httpx
@@ -14,6 +15,9 @@ import httpx
 from app.config import get_settings
 
 _BASE = "https://generativelanguage.googleapis.com/v1beta/models"
+# Gemini-2.5-flash can return transient 503 (overloaded) / 429 — retry briefly.
+_RETRY_STATUSES = {429, 500, 503}
+_MAX_ATTEMPTS = 4
 
 
 async def _generate(parts: list[dict]) -> str:
@@ -23,26 +27,30 @@ async def _generate(parts: list[dict]) -> str:
 
     url = f"{_BASE}/{settings.gemini_model}:generateContent"
     payload = {"contents": [{"parts": parts}]}
+    headers = {
+        "x-goog-api-key": settings.gemini_api_key,
+        "Content-Type": "application/json",
+    }
 
+    last_detail = ""
     async with httpx.AsyncClient(timeout=60.0) as client:
-        resp = await client.post(
-            url,
-            headers={
-                "x-goog-api-key": settings.gemini_api_key,
-                "Content-Type": "application/json",
-            },
-            json=payload,
-        )
+        for attempt in range(_MAX_ATTEMPTS):
+            resp = await client.post(url, headers=headers, json=payload)
+            if resp.status_code == 200:
+                data = resp.json()
+                candidates = data.get("candidates", [])
+                if not candidates:
+                    return ""
+                out_parts = candidates[0].get("content", {}).get("parts", [])
+                return "".join(p.get("text", "") for p in out_parts).strip()
 
-    if resp.status_code != 200:
-        raise RuntimeError(f"Gemini error ({resp.status_code}): {resp.text[:300]}")
+            last_detail = f"{resp.status_code}: {resp.text[:200]}"
+            if resp.status_code in _RETRY_STATUSES and attempt < _MAX_ATTEMPTS - 1:
+                await asyncio.sleep(1.5 * (attempt + 1))  # 1.5s, 3s, 4.5s
+                continue
+            break
 
-    data = resp.json()
-    candidates = data.get("candidates", [])
-    if not candidates:
-        return ""
-    out_parts = candidates[0].get("content", {}).get("parts", [])
-    return "".join(p.get("text", "") for p in out_parts).strip()
+    raise RuntimeError(f"Gemini error ({last_detail})")
 
 
 async def transcribe_audio(audio_bytes: bytes, mime_type: str) -> str:
