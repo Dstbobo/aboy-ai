@@ -35,7 +35,8 @@
         "VIBRATE",
         "INTERNET",
         "ACCESS_NETWORK_STATE",
-        "RECORD_AUDIO"
+        "RECORD_AUDIO",
+        "CAMERA"
       ]
     },
     "web": {
@@ -44,6 +45,12 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Aboy AI uses the camera so you can ask about textbook pages, notes, diagrams, and clinical images."
+        }
+      ],
       [
         "expo-notifications",
         {

@@ -13,11 +13,13 @@ export interface QueryResponse {
 export async function sendQuery(
   query: string,
   sessionId: string | null,
+  signal?: AbortSignal,
 ): Promise<QueryResponse> {
-  const { data } = await api.post<QueryResponse>('/api/v1/query', {
-    query,
-    session_id: sessionId,
-  });
+  const { data } = await api.post<QueryResponse>(
+    '/api/v1/query',
+    { query, session_id: sessionId },
+    { signal },
+  );
   return data;
 }
 

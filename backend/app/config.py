@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     voyage_api_key: str
     tavily_api_key: str
     openai_api_key: str = ""  # fallback only
+    gemini_api_key: str = ""  # voice transcription + vision
+    gemini_model: str = "gemini-2.0-flash"
 
     # LLM config
     anthropic_model: str = "claude-sonnet-4-6"
