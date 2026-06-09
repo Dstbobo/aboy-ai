@@ -58,7 +58,22 @@ wss.on('connection', (phone, req) => {
     startedAt: Date.now(),
     transcript: [], // [{ role: 'user'|'assistant', text, ts }]
     closed: false,
+    // diagnostics
+    audioIn: 0,
+    imageIn: 0,
+    setupSent: false,
+    setupComplete: false,
+    audioOut: 0,
   };
+
+  // Periodic diagnostic heartbeat so we can see flow in real time.
+  const diag = setInterval(() => {
+    if (session.closed) return;
+    log(
+      `flow ${session.userId || '?'} | audioIn=${session.audioIn} imageIn=${session.imageIn} ` +
+        `setup=${session.setupComplete} audioOut=${session.audioOut} turns=${session.transcript.length}`,
+    );
+  }, 5000);
 
   // Pull userId from query string (?userId=...) if present.
   try {
@@ -93,7 +108,10 @@ wss.on('connection', (phone, req) => {
       if (phone.readyState === WebSocket.OPEN) {
         phone.send(data, { binary: isBinary });
       }
-      if (!isBinary) accumulateTranscript(session, data);
+      if (!isBinary) {
+        accumulateTranscript(session, data);
+        countServerFrame(session, data);
+      }
     });
 
     upstream.on('close', (code, reason) => {
@@ -131,14 +149,28 @@ wss.on('connection', (phone, req) => {
   phone.on('message', (data, isBinary) => {
     // Allow the phone to attach its userId via a control frame.
     if (!isBinary) {
+      const str = data.toString();
       try {
-        const obj = JSON.parse(data.toString());
+        const obj = JSON.parse(str);
         if (obj && obj.type === 'auth' && obj.userId) {
           session.userId = obj.userId;
           return; // don't forward control frames
         }
+        if (obj && obj.setup) {
+          session.setupSent = true;
+          log('phone sent setup, model =', obj.setup.model);
+        }
+        // Count realtime media chunks from the phone.
+        const chunks = obj && obj.realtimeInput && obj.realtimeInput.mediaChunks;
+        if (Array.isArray(chunks)) {
+          for (const c of chunks) {
+            const mt = String(c.mimeType || c.mime_type || '');
+            if (mt.startsWith('audio/')) session.audioIn++;
+            else if (mt.startsWith('image/')) session.imageIn++;
+          }
+        }
       } catch (_) {
-        // not JSON control — forward as-is
+        // not JSON — forward as-is
       }
     }
     if (gemini && gemini.readyState === WebSocket.OPEN) {
@@ -150,7 +182,12 @@ wss.on('connection', (phone, req) => {
 
   phone.on('close', async () => {
     session.closed = true;
-    log('Phone disconnected', session.userId || '(anonymous)');
+    clearInterval(diag);
+    log(
+      `Phone disconnected ${session.userId || '(anon)'} | SUMMARY audioIn=${session.audioIn} ` +
+        `imageIn=${session.imageIn} setupComplete=${session.setupComplete} audioOut=${session.audioOut} ` +
+        `turns=${session.transcript.length}`,
+    );
     try {
       if (gemini && gemini.readyState === WebSocket.OPEN) gemini.close();
     } catch (_) {}
@@ -166,6 +203,28 @@ wss.on('connection', (phone, req) => {
  * Parse Gemini serverContent messages for input/output transcriptions and
  * append them to the running transcript.
  */
+function countServerFrame(session, raw) {
+  let msg;
+  try {
+    msg = JSON.parse(raw.toString());
+  } catch (_) {
+    return;
+  }
+  if (msg.setupComplete && !session.setupComplete) {
+    session.setupComplete = true;
+    log('Gemini setupComplete for', session.userId || '?');
+  }
+  const sc = msg.serverContent || msg.server_content;
+  const parts = sc && sc.modelTurn && sc.modelTurn.parts;
+  if (Array.isArray(parts)) {
+    for (const p of parts) {
+      const inl = p.inlineData || p.inline_data;
+      const mt = inl && String(inl.mimeType || inl.mime_type || '');
+      if (mt && mt.startsWith('audio/')) session.audioOut++;
+    }
+  }
+}
+
 function accumulateTranscript(session, raw) {
   let msg;
   try {
