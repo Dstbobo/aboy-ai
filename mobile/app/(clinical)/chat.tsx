@@ -79,7 +79,16 @@ export default function ChatScreen() {
       // Ignore user-initiated cancellations (stop button)
       const canceled = e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED' || controller.signal.aborted;
       if (!canceled) {
-        addAssistantMessage('err' + Date.now(), 'Sorry, I encountered an error. Please try again.', [], false);
+        const status = e?.response?.status;
+        const detail = e?.response?.data?.detail;
+        console.warn('[chat] query failed', { status, detail, message: e?.message, code: e?.code });
+        let friendly = 'Sorry, I encountered an error. Please try again.';
+        if (status === 401) friendly = 'Your session expired. Please sign out and sign in again.';
+        else if (status === 429) friendly = 'You’ve hit the daily query limit. Please try again later.';
+        else if (status === 503) friendly = 'The AI service is temporarily unavailable. Please try again shortly.';
+        else if (e?.code === 'ECONNABORTED') friendly = 'The request timed out. Please check your connection and try again.';
+        else if (!status) friendly = 'Network error — please check your connection and try again.';
+        addAssistantMessage('err' + Date.now(), friendly, [], false);
       }
     } finally {
       abortRef.current = null;

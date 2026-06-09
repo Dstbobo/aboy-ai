@@ -31,6 +31,10 @@ const MIC_OPTIONS = {
   bufferSize: 4096,
 };
 
+function log(...args: any[]) {
+  console.log('[live]', ...args);
+}
+
 /**
  * One realtime Gemini Live session via the Node proxy.
  *  - streams mic PCM16 @16k to Gemini
@@ -45,6 +49,8 @@ export class LiveSession {
   private pcmChunks: string[] = []; // base64 PCM16 @24k from Gemini (current turn)
   private sound: Audio.Sound | null = null;
   private closed = false;
+  private setupDone = false;
+  private chunksSent = 0;
 
   constructor(userId: string | null, cb: LiveCallbacks) {
     this.userId = userId;
@@ -57,16 +63,39 @@ export class LiveSession {
 
   async connect() {
     if (!this.isConfigured) {
+      log('NOT CONFIGURED — EXPO_PUBLIC_GEMINI_LIVE_URL is', JSON.stringify(GEMINI_LIVE_URL));
       this.cb.onStatus?.('error');
       throw new Error('Gemini Live URL not configured');
     }
-    this.cb.onStatus?.('connecting');
 
+    // Request microphone permission BEFORE starting capture. Without this the
+    // native PCM recorder silently produces no audio on Android.
+    try {
+      const perm = await Audio.requestPermissionsAsync();
+      log('mic permission granted =', perm.granted);
+      if (!perm.granted) {
+        this.cb.onStatus?.('error');
+        throw new Error('Microphone permission denied');
+      }
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+      });
+    } catch (e) {
+      log('audio setup failed:', (e as Error)?.message);
+      this.cb.onStatus?.('error');
+      throw e;
+    }
+
+    this.cb.onStatus?.('connecting');
     const url = `${GEMINI_LIVE_URL}?userId=${encodeURIComponent(this.userId ?? '')}`;
+    log('connecting to proxy', url);
     const ws = new WebSocket(url);
     this.ws = ws;
 
     ws.onopen = () => {
+      log('proxy WS open — sending setup with model', LIVE_MODEL);
       // Identify, then send Live API setup.
       this.send({ type: 'auth', userId: this.userId });
       this.send({
@@ -90,8 +119,12 @@ export class LiveSession {
     };
 
     ws.onmessage = (ev) => this.onMessage(ev.data);
-    ws.onerror = () => this.cb.onStatus?.('error');
-    ws.onclose = () => {
+    ws.onerror = (e: any) => {
+      log('proxy WS error:', e?.message ?? 'unknown');
+      this.cb.onStatus?.('error');
+    };
+    ws.onclose = (e: any) => {
+      log('proxy WS closed', e?.code ?? '', e?.reason ?? '');
       if (!this.closed) this.cb.onStatus?.('closed');
     };
   }
@@ -120,17 +153,20 @@ export class LiveSession {
 
     // Proxy status frames
     if (msg.type === 'proxy_status') {
-      if (msg.status === 'connected') {
-        this.cb.onStatus?.('connected');
-        this.startMic();
-      } else if (msg.status === 'reconnecting') this.cb.onStatus?.('reconnecting');
+      log('proxy_status:', msg.status, msg.attempt ?? '');
+      if (msg.status === 'connected') this.cb.onStatus?.('connected');
+      else if (msg.status === 'reconnecting') this.cb.onStatus?.('reconnecting');
       else if (msg.status === 'rate_limited') this.cb.onStatus?.('rate_limited');
       else if (msg.status === 'error') this.cb.onStatus?.('error');
       return;
     }
 
     if (msg.setupComplete) {
+      // Gemini is ready — only NOW start streaming mic audio.
+      log('setupComplete — starting mic');
+      this.setupDone = true;
       this.cb.onStatus?.('listening');
+      this.startMic();
       return;
     }
 
@@ -150,15 +186,21 @@ export class LiveSession {
     if (outT) this.cb.onTranscript?.('assistant', outT);
 
     const parts = sc.modelTurn?.parts ?? [];
+    let audioParts = 0;
     for (const p of parts) {
       const inline = p.inlineData || p.inline_data;
       if (inline?.data && String(inline.mimeType || inline.mime_type).startsWith('audio/')) {
         this.pcmChunks.push(inline.data);
+        audioParts++;
         this.cb.onStatus?.('speaking');
       }
     }
+    if (audioParts) log('received', audioParts, 'audio part(s), buffered:', this.pcmChunks.length);
+    if (inT) log('input transcript:', JSON.stringify(inT).slice(0, 80));
+    if (outT) log('output transcript:', JSON.stringify(outT).slice(0, 80));
 
     if (sc.turnComplete || sc.generationComplete) {
+      log('turnComplete — playing', this.pcmChunks.length, 'chunks');
       await this.flushPlayback();
       this.cb.onStatus?.('listening');
     }
@@ -167,19 +209,30 @@ export class LiveSession {
   // ── Microphone streaming ──
   private startMic() {
     if (this.micActive) return;
+    if (!LiveAudioStream || typeof LiveAudioStream.init !== 'function') {
+      log('ERROR: LiveAudioStream native module unavailable');
+      this.cb.onStatus?.('error');
+      return;
+    }
     try {
+      log('initialising mic', MIC_OPTIONS);
       LiveAudioStream.init(MIC_OPTIONS as any);
       LiveAudioStream.on('data', (chunk: string) => {
+        if (!this.setupDone) return; // don't send before Gemini is ready
+        this.chunksSent++;
+        if (this.chunksSent === 1) log('first mic chunk sent (len', chunk.length, ')');
+        if (this.chunksSent % 50 === 0) log('mic chunks sent:', this.chunksSent);
         this.send({
           realtimeInput: { mediaChunks: [{ mimeType: 'audio/pcm;rate=16000', data: chunk }] },
         });
-        // rough level estimate for the waveform
         this.cb.onLevel?.(Math.min(1, chunk.length / 6000));
       });
       LiveAudioStream.start();
       this.micActive = true;
+      log('mic started');
       this.cb.onStatus?.('listening');
-    } catch {
+    } catch (e) {
+      log('startMic failed:', (e as Error)?.message);
       this.cb.onStatus?.('error');
     }
   }
@@ -216,13 +269,17 @@ export class LiveSession {
       const path = `${FileSystem.cacheDirectory}live_${Date.now()}.wav`;
       await FileSystem.writeAsStringAsync(path, wavB64, { encoding: FileSystem.EncodingType.Base64 });
       await this.stopPlayback();
+      log('playing AI audio clip', path.split('/').pop());
       const { sound } = await Audio.Sound.createAsync({ uri: path }, { shouldPlay: true });
       this.sound = sound;
       sound.setOnPlaybackStatusUpdate((st: any) => {
-        if (st.didJustFinish) this.stopPlayback();
+        if (st.didJustFinish) {
+          log('AI audio finished');
+          this.stopPlayback();
+        }
       });
-    } catch {
-      // ignore playback failure
+    } catch (e) {
+      log('playback failed:', (e as Error)?.message);
     }
   }
 
