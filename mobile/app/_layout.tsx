@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { PaperProvider } from 'react-native-paper';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { StatusBar } from 'expo-status-bar';
 import { useColorScheme } from 'react-native';
 import { useAuthStore } from '@/stores/auth.store';
@@ -56,18 +57,20 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <PaperProvider theme={theme}>
-        <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
-        <NetworkWatcher />
-        <AuthGuard>
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="index" />
-            <Stack.Screen name="(auth)" />
-            <Stack.Screen name="(clinical)" />
-            <Stack.Screen name="(admin)" />
-          </Stack>
-        </AuthGuard>
-      </PaperProvider>
+      <KeyboardProvider>
+        <PaperProvider theme={theme}>
+          <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+          <NetworkWatcher />
+          <AuthGuard>
+            <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="index" />
+              <Stack.Screen name="(auth)" />
+              <Stack.Screen name="(clinical)" />
+              <Stack.Screen name="(admin)" />
+            </Stack>
+          </AuthGuard>
+        </PaperProvider>
+      </KeyboardProvider>
     </GestureHandlerRootView>
   );
 }

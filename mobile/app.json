@@ -17,7 +17,10 @@
     ],
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.aboyai.app"
+      "bundleIdentifier": "com.aboyai.app",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Aboy AI uses the microphone to let you record and send voice questions."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -26,13 +29,13 @@
       },
       "package": "com.aboyai.app",
       "versionCode": 1,
-      "softwareKeyboardLayoutMode": "resize",
       "permissions": [
         "NOTIFICATIONS",
         "RECEIVE_BOOT_COMPLETED",
         "VIBRATE",
         "INTERNET",
-        "ACCESS_NETWORK_STATE"
+        "ACCESS_NETWORK_STATE",
+        "RECORD_AUDIO"
       ]
     },
     "web": {
