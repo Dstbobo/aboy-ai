@@ -10,6 +10,7 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { useUIStore } from '@/stores/ui.store';
 import { useAuthStore } from '@/stores/auth.store';
 import { LiveSession, type LiveStatus } from '@/services/geminiLive';
@@ -46,25 +47,31 @@ export function VideoMode() {
 
   const startStreaming = useCallback(() => {
     if (frameTimer.current) return;
-    // Stream ~1 frame per second to the Live session.
+    // Stream exactly 1 frame per second to the Live session.
     frameTimer.current = setInterval(async () => {
       try {
         const cam = cameraRef.current;
         const session = sessionRef.current;
-        if (!cam || !session) return;
-        // animateShutter is disabled on the CameraView; also pass options that
-        // avoid the white shutter flash / preview freeze on each capture.
+        if (!cam || !session || !session.isReady) return;
         const photo = await cam.takePictureAsync({
-          base64: true,
-          quality: 0.3,
+          base64: false,
+          quality: 0.4,
           skipProcessing: true,
           shutterSound: false,
         } as any);
-        if (photo?.base64) session.sendImageFrame(photo.base64);
+        if (!photo?.uri) return;
+        // Scale down to max 480px width before sending (smaller payloads,
+        // faster round-trips, what the Live API actually needs).
+        const scaled = await ImageManipulator.manipulateAsync(
+          photo.uri,
+          [{ resize: { width: 480 } }],
+          { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+        );
+        if (scaled.base64) session.sendImageFrame(scaled.base64);
       } catch {
         // skip this frame
       }
-    }, 2000); // ~1 frame / 2s — smooth preview, still "sees" the page
+    }, 1000);
   }, []);
 
   const stopStreaming = useCallback(() => {

@@ -2,9 +2,13 @@ import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
 import LiveAudioStream from 'react-native-live-audio-stream';
 
-export const GEMINI_LIVE_URL = process.env.EXPO_PUBLIC_GEMINI_LIVE_URL ?? '';
-// Live API model with native-audio dialog (verified available on this key
-// via ListModels: supports bidiGenerateContent).
+// Primary: FastAPI backend /ws/live proxy. Fallback: standalone Node proxy.
+const API_URL = process.env.EXPO_PUBLIC_API_URL ?? '';
+export const GEMINI_LIVE_URL = API_URL
+  ? `${API_URL.replace(/^http/, 'ws')}/ws/live`
+  : (process.env.EXPO_PUBLIC_GEMINI_LIVE_URL ?? '');
+// Live API model with native-audio dialog (verified available on this key via
+// ListModels — gemini-2.0-flash-live-001 is NOT available and closes 1008).
 const LIVE_MODEL = 'models/gemini-2.5-flash-native-audio-latest';
 
 export type LiveStatus =
@@ -51,6 +55,7 @@ export class LiveSession {
   private closed = false;
   private setupDone = false;
   private chunksSent = 0;
+  private micMuted = false;
 
   constructor(userId: string | null, cb: LiveCallbacks) {
     this.userId = userId;
@@ -81,6 +86,9 @@ export class LiveSession {
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
         staysActiveInBackground: false,
+        // Route playback to the loudspeaker (not the earpiece). Combined with
+        // audioSource=6 (VOICE_RECOGNITION, hardware AEC) this prevents echo.
+        playThroughEarpieceAndroid: false,
       });
     } catch (e) {
       log('audio setup failed:', (e as Error)?.message);
@@ -96,8 +104,8 @@ export class LiveSession {
 
     ws.onopen = () => {
       log('proxy WS open — sending setup with model', LIVE_MODEL);
-      // Identify, then send Live API setup.
-      this.send({ type: 'auth', userId: this.userId });
+      this.cb.onStatus?.('connected');
+      // Setup MUST be the first and only message until setupComplete arrives.
       this.send({
         setup: {
           model: LIVE_MODEL,
@@ -106,9 +114,10 @@ export class LiveSession {
             parts: [
               {
                 text:
-                  'You are Aboy AI, a concise, evidence-based healthcare tutor for ' +
-                  'medical, nursing and allied-health students. Keep spoken answers short, ' +
-                  'clear and accurate. If you see an image, describe and explain it for study.',
+                  'You are Aboy AI, a medical education assistant for healthcare ' +
+                  'students. Help with nursing, medicine, and allied health questions. ' +
+                  'Keep spoken answers short, clear and evidence-based. If you see an ' +
+                  'image, describe and explain it for study.',
               },
             ],
           },
@@ -218,7 +227,7 @@ export class LiveSession {
       log('initialising mic', MIC_OPTIONS);
       LiveAudioStream.init(MIC_OPTIONS as any);
       LiveAudioStream.on('data', (chunk: string) => {
-        if (!this.setupDone) return; // don't send before Gemini is ready
+        if (!this.setupDone || this.micMuted) return; // gated until ready / while muted
         this.chunksSent++;
         if (this.chunksSent === 1) log('first mic chunk sent (len', chunk.length, ')');
         if (this.chunksSent % 50 === 0) log('mic chunks sent:', this.chunksSent);
@@ -257,6 +266,12 @@ export class LiveSession {
 
   get isReady() {
     return this.setupDone;
+  }
+
+  /** Mute/unmute the outgoing mic without ending the session. */
+  setMicMuted(muted: boolean) {
+    this.micMuted = muted;
+    log('mic muted =', muted);
   }
 
   /** User taps to interrupt the AI while it is speaking. */
