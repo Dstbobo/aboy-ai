@@ -16,7 +16,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { OfflineBanner } from '@/components/shared/OfflineBanner';
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton';
-import Voice from '@react-native-voice/voice';
+import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from 'expo-speech-recognition';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { VoiceDock } from '@/components/voice/VoiceDock';
 import { useChatStore } from '@/stores/chat.store';
@@ -119,58 +119,70 @@ export default function ChatScreen() {
   const finalWordsRef = useRef(''); // committed segments across pauses
   const liveWordsRef = useRef('');
 
-  useEffect(() => {
-    Voice.onSpeechPartialResults = (e: any) => {
-      const partial = e?.value?.[0] ?? '';
-      const combined = (finalWordsRef.current + ' ' + partial).trim();
+  // Words stream instantly via interim results; continuous mode keeps
+  // listening through pauses until the user taps ✓ or ✕.
+  useSpeechRecognitionEvent('result', (e: any) => {
+    if (!listeningRef.current) return;
+    const transcript = e?.results?.[0]?.transcript ?? '';
+    if (!transcript) return;
+    if (e.isFinal) {
+      finalWordsRef.current = (finalWordsRef.current + ' ' + transcript).trim();
+      liveWordsRef.current = finalWordsRef.current;
+      setLiveWords(finalWordsRef.current);
+    } else {
+      const combined = (finalWordsRef.current + ' ' + transcript).trim();
       liveWordsRef.current = combined;
       setLiveWords(combined);
-    };
-    Voice.onSpeechResults = (e: any) => {
-      const final = e?.value?.[0] ?? '';
-      if (final) {
-        finalWordsRef.current = (finalWordsRef.current + ' ' + final).trim();
-        liveWordsRef.current = finalWordsRef.current;
-        setLiveWords(finalWordsRef.current);
-      }
-    };
-    Voice.onSpeechVolumeChanged = (e: any) => {
-      // e.value ≈ 0..10 on Android
-      const norm = Math.max(0.08, Math.min(1, (e?.value ?? 0) / 10));
-      const i = Math.floor(Math.random() * BAR_COUNT);
-      Animated.timing(waveLevels[i], { toValue: norm, duration: 100, useNativeDriver: false }).start();
-    };
-    Voice.onSpeechEnd = () => {
-      // Android stops after a pause — restart so the bar keeps listening
-      // until the user taps ✓ or ✕.
-      if (listeningRef.current) Voice.start('en-US').catch(() => {});
-    };
-    Voice.onSpeechError = (e: any) => {
-      const code = String(e?.error?.code ?? '');
-      // 7 = no match, 6 = speech timeout — keep listening through these.
-      if (listeningRef.current && (code === '7' || code === '6')) {
-        Voice.start('en-US').catch(() => {});
-      } else if (listeningRef.current) {
-        console.warn('[stt] error', e?.error);
-      }
-    };
-    return () => {
-      Voice.destroy().then(() => Voice.removeAllListeners()).catch(() => {});
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    }
+  });
+
+  useSpeechRecognitionEvent('volumechange', (e: any) => {
+    // e.value ≈ -2..10
+    const norm = Math.max(0.08, Math.min(1, ((e?.value ?? 0) + 2) / 12));
+    const i = Math.floor(Math.random() * BAR_COUNT);
+    Animated.timing(waveLevels[i], { toValue: norm, duration: 100, useNativeDriver: false }).start();
+  });
+
+  useSpeechRecognitionEvent('end', () => {
+    // Restart if the recognizer stops while the bar is still up.
+    if (listeningRef.current) {
+      startRecognizer().catch(() => {});
+    }
+  });
+
+  useSpeechRecognitionEvent('error', (e: any) => {
+    // "no-speech" / "speech-timeout" are normal pauses — keep listening.
+    if (listeningRef.current && e?.error !== 'no-speech' && e?.error !== 'speech-timeout') {
+      console.warn('[stt] error', e?.error, e?.message);
+    }
+  });
+
+  async function startRecognizer() {
+    ExpoSpeechRecognitionModule.start({
+      lang: 'en-US',
+      interimResults: true,
+      continuous: true,
+      volumeChangeEventOptions: { enabled: true, intervalMillis: 120 },
+    });
+  }
 
   async function beginRecording() {
     finalWordsRef.current = '';
     liveWordsRef.current = '';
     setLiveWords('');
     try {
+      const perm = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+      if (!perm.granted) {
+        console.warn('[stt] permission denied');
+        return;
+      }
       setIsListening(true);
       listeningRef.current = true;
-      await Voice.start('en-US');
+      await startRecognizer();
     } catch (e) {
       console.warn('[stt] start failed', (e as Error)?.message);
       setIsListening(false);
+      listeningRef.current = false;
     }
   }
 
@@ -178,8 +190,7 @@ export default function ChatScreen() {
     setIsListening(false);
     listeningRef.current = false;
     try {
-      await Voice.stop();
-      await Voice.cancel();
+      ExpoSpeechRecognitionModule.abort();
     } catch {}
     setLiveWords('');
     finalWordsRef.current = '';
@@ -190,7 +201,7 @@ export default function ChatScreen() {
     setIsListening(false);
     listeningRef.current = false;
     try {
-      await Voice.stop();
+      ExpoSpeechRecognitionModule.stop();
     } catch {}
     const text = liveWordsRef.current.trim();
     setLiveWords('');
