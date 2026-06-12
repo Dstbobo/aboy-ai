@@ -7,6 +7,7 @@ import {
   TextInput,
   TouchableOpacity,
   ActivityIndicator,
+  Animated,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
@@ -54,10 +55,10 @@ export default function ChatScreen() {
   const openPlusSheet = useUIStore((s) => s.openPlusSheet);
   const openVoiceMode = useUIStore((s) => s.openVoiceMode);
   const voiceModeOpen = useUIStore((s) => s.voiceModeOpen);
-  const { isRecording, start, stop } = useRecorder();
+  const { isRecording, start, stop, getUri } = useRecorder();
 
-  async function sendMessage() {
-    const text = inputText.trim();
+  async function sendMessage(textOverride?: string) {
+    const text = (textOverride ?? inputText).trim();
     if (!text || isLoading) return;
     setInputText('');
 
@@ -108,22 +109,73 @@ export default function ChatScreen() {
     setLoading(false);
   }
 
-  // Tap-to-talk: tap to record, tap again to stop + transcribe into the input.
-  async function toggleTalk() {
-    if (isRecording) {
-      const uri = await stop();
+  // ── Mic recording bar: X (cancel) | live waveform | ✓ (send as text) ──
+  const BAR_COUNT = 22;
+  const waveLevels = useRef<Animated.Value[]>(
+    Array.from({ length: BAR_COUNT }, () => new Animated.Value(0.15)),
+  ).current;
+  const partialTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const transcribeBusy = useRef(false);
+  const [liveWords, setLiveWords] = useState('');
+
+  function animateWave(db: number) {
+    // metering dB ≈ -60 (quiet) .. 0 (loud)
+    const norm = Math.max(0.08, Math.min(1, (db + 50) / 50));
+    const i = Math.floor(Math.random() * BAR_COUNT);
+    Animated.timing(waveLevels[i], { toValue: norm, duration: 110, useNativeDriver: false }).start();
+  }
+
+  async function beginRecording() {
+    setLiveWords('');
+    const ok = await start(animateWave);
+    if (!ok) return;
+    // Live words: the AAC/WAV file is streamable, so periodically transcribe
+    // the partial file while recording continues.
+    partialTimer.current = setInterval(async () => {
+      if (transcribeBusy.current) return;
+      const uri = getUri();
       if (!uri) return;
-      setIsTranscribing(true);
+      transcribeBusy.current = true;
       try {
         const text = (await transcribeAudio(uri)).trim();
-        if (text) setInputText((prev) => (prev ? `${prev} ${text}` : text));
+        if (text) setLiveWords(text);
       } catch {
-        // user can retry
+        // partial file not decodable yet — skip
       } finally {
-        setIsTranscribing(false);
+        transcribeBusy.current = false;
       }
-    } else {
-      await start();
+    }, 2500);
+  }
+
+  function clearPartialTimer() {
+    if (partialTimer.current) {
+      clearInterval(partialTimer.current);
+      partialTimer.current = null;
+    }
+  }
+
+  async function cancelRecording() {
+    clearPartialTimer();
+    await stop();
+    setLiveWords('');
+  }
+
+  async function confirmRecording() {
+    clearPartialTimer();
+    const uri = await stop();
+    if (!uri) {
+      setLiveWords('');
+      return;
+    }
+    setIsTranscribing(true);
+    try {
+      const text = (await transcribeAudio(uri)).trim();
+      setLiveWords('');
+      if (text) await sendMessage(text); // spoken words sent as a text message
+    } catch {
+      setLiveWords('');
+    } finally {
+      setIsTranscribing(false);
     }
   }
 
@@ -142,7 +194,7 @@ export default function ChatScreen() {
     );
   } else if (isTyping) {
     rightControl = (
-      <TouchableOpacity style={styles.sendCircle} onPress={sendMessage} hitSlop={6}>
+      <TouchableOpacity style={styles.sendCircle} onPress={() => sendMessage()} hitSlop={6}>
         <MaterialCommunityIcons name="arrow-up" size={20} color="#fff" />
       </TouchableOpacity>
     );
@@ -198,6 +250,43 @@ export default function ChatScreen() {
             {/* Voice active: dock replaces the input bar, chat stays above */}
             {voiceModeOpen ? (
               <VoiceDock />
+            ) : isRecording || isTranscribing ? (
+              <View>
+                {/* Live words — italic, above the bar, in real time */}
+                {!!liveWords && (
+                  <Text style={styles.liveWords} numberOfLines={3}>
+                    {liveWords}
+                  </Text>
+                )}
+                <View style={styles.inputCard}>
+                  {/* X — cancel */}
+                  <TouchableOpacity style={styles.micBtn} onPress={cancelRecording} hitSlop={6} disabled={isTranscribing}>
+                    <MaterialCommunityIcons name="close" size={24} color={COLORS.text} />
+                  </TouchableOpacity>
+
+                  {/* Animated waveform reacting to the voice */}
+                  <View style={styles.waveform}>
+                    {waveLevels.map((v, i) => (
+                      <Animated.View
+                        key={i}
+                        style={[
+                          styles.waveBar,
+                          { height: v.interpolate({ inputRange: [0, 1], outputRange: [4, 30] }) },
+                        ]}
+                      />
+                    ))}
+                  </View>
+
+                  {/* ✓ — confirm: send spoken words as a text message */}
+                  <TouchableOpacity style={styles.confirmBtn} onPress={confirmRecording} hitSlop={6} disabled={isTranscribing}>
+                    {isTranscribing ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <MaterialCommunityIcons name="check" size={24} color="#fff" />
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
             ) : (
             <View style={styles.inputCard}>
               <TouchableOpacity style={styles.plusBtn} onPress={openPlusSheet} hitSlop={6}>
@@ -213,21 +302,8 @@ export default function ChatScreen() {
                 onChangeText={setInputText}
               />
 
-              <TouchableOpacity
-                style={[styles.micBtn, isRecording && styles.micBtnActive]}
-                onPress={toggleTalk}
-                disabled={isTranscribing}
-                hitSlop={6}
-              >
-                {isTranscribing ? (
-                  <ActivityIndicator size="small" color={COLORS.primary} />
-                ) : (
-                  <MaterialCommunityIcons
-                    name={isRecording ? 'stop' : 'microphone-outline'}
-                    size={22}
-                    color={isRecording ? '#fff' : COLORS.text}
-                  />
-                )}
+              <TouchableOpacity style={styles.micBtn} onPress={beginRecording} hitSlop={6}>
+                <MaterialCommunityIcons name="microphone-outline" size={22} color={COLORS.text} />
               </TouchableOpacity>
 
               {rightControl}
@@ -288,7 +364,33 @@ const styles = StyleSheet.create({
     width: 40, height: 40, borderRadius: 20,
     alignItems: 'center', justifyContent: 'center',
   },
-  micBtnActive: { backgroundColor: COLORS.error },
+  liveWords: {
+    fontStyle: 'italic',
+    fontSize: 15,
+    lineHeight: 21,
+    color: COLORS.textSecondary,
+    paddingHorizontal: 22,
+    marginBottom: 6,
+  },
+  waveform: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+    height: 40,
+    paddingHorizontal: 8,
+  },
+  waveBar: {
+    width: 3.5,
+    borderRadius: 2,
+    backgroundColor: COLORS.primary,
+  },
+  confirmBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center', justifyContent: 'center',
+  },
   wavePill: {
     minWidth: 56, height: 40, borderRadius: 20,
     paddingHorizontal: 16,

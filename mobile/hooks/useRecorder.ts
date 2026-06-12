@@ -72,6 +72,12 @@ export function useRecorder() {
     [],
   );
 
+  /** URI of the in-progress recording file (AAC/WAV are streamable formats,
+   *  so the partial file can be transcribed while recording continues). */
+  const getUri = useCallback((): string | null => {
+    return recordingRef.current?.getURI() ?? null;
+  }, []);
+
   const stop = useCallback(async (): Promise<string | null> => {
     const recording = recordingRef.current;
     recordingRef.current = null;
@@ -86,5 +92,5 @@ export function useRecorder() {
     }
   }, []);
 
-  return { isRecording, start, stop };
+  return { isRecording, start, stop, getUri };
 }
