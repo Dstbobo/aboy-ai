@@ -16,6 +16,7 @@ import { MessageBubble } from '@/components/chat/MessageBubble';
 import { OfflineBanner } from '@/components/shared/OfflineBanner';
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton';
 import { AppScreen } from '@/components/layout/AppScreen';
+import { VoiceDock } from '@/components/voice/VoiceDock';
 import { useChatStore } from '@/stores/chat.store';
 import { useOfflineStore } from '@/stores/offline.store';
 import { useUIStore } from '@/stores/ui.store';
@@ -52,6 +53,7 @@ export default function ChatScreen() {
   const { isOffline, enqueueQuery } = useOfflineStore();
   const openPlusSheet = useUIStore((s) => s.openPlusSheet);
   const openVoiceMode = useUIStore((s) => s.openVoiceMode);
+  const voiceModeOpen = useUIStore((s) => s.voiceModeOpen);
   const { isRecording, start, stop } = useRecorder();
 
   async function sendMessage() {
@@ -193,7 +195,10 @@ export default function ChatScreen() {
 
             {isLoading && <LoadingSkeleton />}
 
-            {/* Gemini-style input bar: + | text | mic | pill/send/stop */}
+            {/* Voice active: dock replaces the input bar, chat stays above */}
+            {voiceModeOpen ? (
+              <VoiceDock />
+            ) : (
             <View style={styles.inputCard}>
               <TouchableOpacity style={styles.plusBtn} onPress={openPlusSheet} hitSlop={6}>
                 <MaterialCommunityIcons name="plus" size={24} color={COLORS.text} />
@@ -227,6 +232,7 @@ export default function ChatScreen() {
 
               {rightControl}
             </View>
+            )}
           </KeyboardAvoidingView>
         </SafeAreaView>
       </LinearGradient>

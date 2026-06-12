@@ -104,9 +104,61 @@ export class LiveSession {
     this.openSocket();
   }
 
+  private setupTimer: ReturnType<typeof setTimeout> | null = null;
+  private setupAttempts = 0;
+
+  private sendSetup() {
+    this.setupAttempts += 1;
+    log('sending setup (attempt', this.setupAttempts, ') with model', LIVE_MODEL);
+    this.send({
+      setup: {
+        model: LIVE_MODEL,
+        generationConfig: { responseModalities: ['AUDIO'] },
+        systemInstruction: {
+          parts: [
+            {
+              text:
+                'You are Aboy AI, a medical education assistant for healthcare ' +
+                'students. Help with nursing, medicine, and allied health questions. ' +
+                'Keep spoken answers short, clear and evidence-based. If you see an ' +
+                'image, describe and explain it for study.',
+            },
+          ],
+        },
+        inputAudioTranscription: {},
+        outputAudioTranscription: {},
+      },
+    });
+    // Watchdog: evidence shows sends made synchronously inside onopen can be
+    // lost on RN Android while later sends deliver fine. If setupComplete
+    // hasn't arrived, re-send setup once; after that, force a reconnect so
+    // the endpoint-fallback logic takes over instead of hanging forever.
+    this.clearSetupTimer();
+    this.setupTimer = setTimeout(() => {
+      if (this.setupDone || this.closed) return;
+      if (this.setupAttempts < 2) {
+        log('watchdog: no setupComplete after 3s — re-sending setup');
+        this.sendSetup();
+      } else {
+        log('watchdog: still no setupComplete — reconnecting');
+        try {
+          this.ws?.close();
+        } catch {}
+      }
+    }, 3000);
+  }
+
+  private clearSetupTimer() {
+    if (this.setupTimer) {
+      clearTimeout(this.setupTimer);
+      this.setupTimer = null;
+    }
+  }
+
   /** Open (or re-open on the next fallback endpoint) the proxy WebSocket. */
   private openSocket() {
     this.cb.onStatus?.('connecting');
+    this.setupAttempts = 0;
     const base = ENDPOINTS[this.endpointIndex];
     const url = `${base}?userId=${encodeURIComponent(this.userId ?? '')}`;
     log('connecting to proxy', url);
@@ -115,28 +167,10 @@ export class LiveSession {
 
     ws.onopen = () => {
       log('connected'); // required log: connected
-      log('sending setup with model', LIVE_MODEL);
       this.cb.onStatus?.('connected');
-      // Setup MUST be the first and only message until setupComplete arrives.
-      this.send({
-        setup: {
-          model: LIVE_MODEL,
-          generationConfig: { responseModalities: ['AUDIO'] },
-          systemInstruction: {
-            parts: [
-              {
-                text:
-                  'You are Aboy AI, a medical education assistant for healthcare ' +
-                  'students. Help with nursing, medicine, and allied health questions. ' +
-                  'Keep spoken answers short, clear and evidence-based. If you see an ' +
-                  'image, describe and explain it for study.',
-              },
-            ],
-          },
-          inputAudioTranscription: {},
-          outputAudioTranscription: {},
-        },
-      });
+      // Defer the setup send one tick — sends issued synchronously inside
+      // onopen have been observed to drop on RN Android.
+      setTimeout(() => this.sendSetup(), 50);
     };
 
     ws.onmessage = (ev) => this.onMessage(ev.data);
@@ -145,6 +179,7 @@ export class LiveSession {
     };
     ws.onclose = (e: any) => {
       log('proxy WS closed', e?.code ?? '', e?.reason ?? '');
+      this.clearSetupTimer();
       if (this.closed) return;
       // If we never reached setupComplete on this endpoint, try the next one
       // (backend /ws/live -> standalone Node proxy) before reporting failure.
@@ -193,6 +228,7 @@ export class LiveSession {
     if (msg.setupComplete) {
       // Gemini is ready — only NOW start streaming mic audio.
       log('setupComplete received — starting mic');
+      this.clearSetupTimer();
       this.setupDone = true;
       this.cb.onStatus?.('listening');
       this.startMic();
@@ -338,6 +374,7 @@ export class LiveSession {
 
   async close() {
     this.closed = true;
+    this.clearSetupTimer();
     this.stopMic();
     await this.stopPlayback();
     try {

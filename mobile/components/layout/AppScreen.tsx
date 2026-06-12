@@ -4,7 +4,7 @@ import { AppHeader } from './AppHeader';
 import { SideDrawer } from './SideDrawer';
 import { PlusSheet } from './PlusSheet';
 import { OptionsSheet } from './OptionsSheet';
-import { VoiceOverlay } from '@/components/voice/VoiceOverlay';
+import { VideoMode } from '@/components/voice/VideoMode';
 
 interface AppScreenProps {
   children: React.ReactNode;
@@ -39,7 +39,7 @@ export function AppScreen({
       {withPlusSheet && (
         <>
           <PlusSheet />
-          <VoiceOverlay />
+          <VideoMode />
         </>
       )}
     </View>

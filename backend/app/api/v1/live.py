@@ -35,10 +35,17 @@ async def gemini_live_proxy(client_ws: WebSocket) -> None:
         async with websockets.connect(url, max_size=16 * 1024 * 1024) as gemini_ws:
             logger.info("live: connected to Gemini")
 
+            counts = {"in": 0, "out": 0}
+
             async def forward_to_gemini() -> None:
                 try:
                     while True:
                         message = await client_ws.receive_text()
+                        counts["in"] += 1
+                        if counts["in"] <= 3:
+                            logger.info("live: phone->gemini #%d: %.100s", counts["in"], message)
+                        elif counts["in"] % 100 == 0:
+                            logger.info("live: phone->gemini count=%d", counts["in"])
                         await gemini_ws.send(message)
                 except WebSocketDisconnect:
                     pass
@@ -48,6 +55,9 @@ async def gemini_live_proxy(client_ws: WebSocket) -> None:
             async def forward_to_client() -> None:
                 try:
                     async for message in gemini_ws:
+                        counts["out"] += 1
+                        if counts["out"] <= 3 and not isinstance(message, bytes):
+                            logger.info("live: gemini->phone #%d: %.100s", counts["out"], message)
                         if isinstance(message, bytes):
                             await client_ws.send_bytes(message)
                         else:
@@ -61,6 +71,7 @@ async def gemini_live_proxy(client_ws: WebSocket) -> None:
             )
             for task in pending:
                 task.cancel()
+            logger.info("live: session ended — frames in=%d out=%d", counts["in"], counts["out"])
     except Exception as exc:  # noqa: BLE001
         logger.warning("live: upstream connect failed: %s", exc)
     finally:
