@@ -12,6 +12,7 @@ import { useUIStore } from '@/stores/ui.store';
 import { useAuthStore } from '@/stores/auth.store';
 import { useChatStore } from '@/stores/chat.store';
 import { LiveSession, type LiveStatus } from '@/services/geminiLive';
+import { ROLE_LABELS } from '@/constants/roles';
 import { COLORS } from '@/constants/theme';
 
 /**
@@ -77,10 +78,24 @@ export function VoiceDock() {
   // is closed (camera mode runs its own Live session — avoids two open mics).
   useEffect(() => {
     if (videoModeOpen) return;
-    const session = new LiveSession(user?.id ?? null, {
-      onStatus: setStatus,
-      onTranscript,
-    });
+    // Role-aware + continues the SAME conversation as text chat.
+    const recent = useChatStore
+      .getState()
+      .messages.slice(-8)
+      .map((m) => ({ role: m.role, content: m.content }));
+    const session = new LiveSession(
+      {
+        userId: user?.id ?? null,
+        role: user?.role ?? null,
+        subRole: user?.subRole ?? null,
+        roleLabel: ROLE_LABELS[user?.role ?? ''] ?? null,
+        history: recent,
+      },
+      {
+        onStatus: setStatus,
+        onTranscript,
+      },
+    );
     sessionRef.current = session;
     session.connect().catch(() => setStatus('error'));
     return () => {

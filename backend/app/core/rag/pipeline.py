@@ -39,7 +39,7 @@ async def run_rag_pipeline(
 
     context = build_context(reranked, web_results)
     system_prompt = get_system_prompt(user.role, getattr(user, "sub_role", None))
-    user_prompt = build_user_prompt(request.query, context)
+    user_prompt = build_user_prompt(request.query, context, request.history)
 
     answer, tokens_in, tokens_out = await generate_response(system_prompt, user_prompt)
 

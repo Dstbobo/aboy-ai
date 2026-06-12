@@ -30,6 +30,61 @@ export interface LiveCallbacks {
   onLevel?: (level: number) => void; // 0..1 input level for waveform
 }
 
+export interface LiveSessionOptions {
+  userId: string | null;
+  /** User's role id (e.g. pro_pharmacist) — voice answers match the role. */
+  role?: string | null;
+  subRole?: string | null;
+  roleLabel?: string | null;
+  /** Recent chat turns so voice continues the same conversation. */
+  history?: { role: 'user' | 'assistant'; content: string }[];
+}
+
+/** Role-aware spoken-assistant instruction — mirrors the text-chat tone map. */
+function buildLiveSystemInstruction(opts: LiveSessionOptions): string {
+  const label = opts.roleLabel || 'healthcare user';
+  const specialty = opts.subRole ? ` specialising in ${opts.subRole}` : '';
+  const role = opts.role ?? '';
+
+  let tone: string;
+  if (role.startsWith('student_')) {
+    tone =
+      'Use a clear, encouraging teaching tone. Explain concepts from first principles ' +
+      'and check understanding. Frame clinical examples as learning scenarios, never directives.';
+  } else if (role === 'pro_senior' || role === 'pro_junior') {
+    tone =
+      'Speak peer-to-peer with clinical depth and precision. Reference guidelines and ' +
+      'evidence grades. Assume clinical competence; flag when specialist input is warranted.';
+  } else if (role.startsWith('pro_')) {
+    tone =
+      `Tailor every answer to the daily practice of a ${label}. Be precise, practical and ` +
+      'evidence-based, focused on their scope of practice.';
+  } else if (role.startsWith('edu_') || role === 'educator') {
+    tone = 'Support teaching: suggest how to explain concepts to students, with pedagogy in mind.';
+  } else if (role.startsWith('res_')) {
+    tone = 'Use a research-grade tone: methods, evidence quality, and citations matter.';
+  } else if (role.startsWith('ops_')) {
+    tone = 'Be practical and plain-spoken for non-clinical hospital work. Avoid heavy jargon.';
+  } else {
+    tone = 'Be clear, concise and evidence-based.';
+  }
+
+  let history = '';
+  const turns = (opts.history ?? []).slice(-8);
+  if (turns.length) {
+    history =
+      ' Conversation so far (continue it — the user switches between typing and voice): ' +
+      turns.map((t) => `${t.role === 'user' ? 'User' : 'You'}: ${t.content.slice(0, 300)}`).join(' | ');
+  }
+
+  return (
+    `You are Aboy AI, a voice assistant for a ${label}${specialty}. ${tone} ` +
+    'Keep spoken answers short and natural — a few sentences unless asked for depth. ' +
+    'If you see an image, describe and explain it for their role.' +
+    history
+  );
+}
+
 const MIC_OPTIONS = {
   sampleRate: 16000,
   channels: 1,
@@ -64,8 +119,16 @@ export class LiveSession {
   // voice (echo triggered its VAD -> self-interruptions and polluted input).
   private playingBack = false;
 
-  constructor(userId: string | null, cb: LiveCallbacks) {
-    this.userId = userId;
+  private opts: LiveSessionOptions;
+
+  constructor(userIdOrOpts: string | null | LiveSessionOptions, cb: LiveCallbacks) {
+    if (userIdOrOpts && typeof userIdOrOpts === 'object') {
+      this.opts = userIdOrOpts;
+      this.userId = userIdOrOpts.userId;
+    } else {
+      this.opts = { userId: userIdOrOpts };
+      this.userId = userIdOrOpts;
+    }
     this.cb = cb;
   }
 
@@ -119,15 +182,7 @@ export class LiveSession {
         model: LIVE_MODEL,
         generationConfig: { responseModalities: ['AUDIO'] },
         systemInstruction: {
-          parts: [
-            {
-              text:
-                'You are Aboy AI, a medical education assistant for healthcare ' +
-                'students. Help with nursing, medicine, and allied health questions. ' +
-                'Keep spoken answers short, clear and evidence-based. If you see an ' +
-                'image, describe and explain it for study.',
-            },
-          ],
+          parts: [{ text: buildLiveSystemInstruction(this.opts) }],
         },
         inputAudioTranscription: {},
         outputAudioTranscription: {},

@@ -584,8 +584,19 @@ def get_system_prompt(role: str, sub_role: str | None = None) -> str:
     return DEFAULT_PROMPT
 
 
-def build_user_prompt(query: str, context: str) -> str:
+def build_user_prompt(query: str, context: str, history: list | None = None) -> str:
+    history_block = ""
+    if history:
+        lines = []
+        for turn in history[-10:]:
+            speaker = "User" if turn.role == "user" else "Assistant"
+            lines.append(f"{speaker}: {turn.content[:600]}")
+        history_block = (
+            "Conversation so far (the user may refer back to it — includes both "
+            "typed and voice turns):\n" + "\n".join(lines) + "\n\n"
+        )
     return (
+        f"{history_block}"
         "Use the following verified medical sources to answer the question. "
         "You MUST cite at least one source in your response using inline citation format "
         "like [Source 1] or [Web 1]. Include a sources list at the end.\n\n"

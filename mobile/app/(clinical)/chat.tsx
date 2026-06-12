@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Animated,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
@@ -15,7 +16,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { OfflineBanner } from '@/components/shared/OfflineBanner';
-import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton';
+import { ThinkingDots } from '@/components/chat/ThinkingDots';
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from 'expo-speech-recognition';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { VoiceDock } from '@/components/voice/VoiceDock';
@@ -65,6 +66,18 @@ export default function ChatScreen() {
     }
   }, [pendingPrompt, setPendingPrompt]);
 
+  // Keyboard state: bar hugs the keyboard when open, floats above the home
+  // indicator (safe area) when closed.
+  const [kbOpen, setKbOpen] = useState(false);
+  useEffect(() => {
+    const s = Keyboard.addListener('keyboardDidShow', () => setKbOpen(true));
+    const h = Keyboard.addListener('keyboardDidHide', () => setKbOpen(false));
+    return () => {
+      s.remove();
+      h.remove();
+    };
+  }, []);
+
   async function sendMessage(textOverride?: string) {
     const text = (textOverride ?? inputText).trim();
     if (!text || isLoading) return;
@@ -84,7 +97,12 @@ export default function ChatScreen() {
     abortRef.current = controller;
 
     try {
-      const result = await sendQuery(text, sessionId, controller.signal);
+      // One continuous thread: include recent turns (typed AND voice).
+      const history = useChatStore
+        .getState()
+        .messages.slice(-10)
+        .map((m) => ({ role: m.role, content: m.content }));
+      const result = await sendQuery(text, sessionId, controller.signal, history);
       if (!sessionId) setSession(result.session_id);
       addAssistantMessage(
         result.session_id + Date.now(),
@@ -256,7 +274,10 @@ export default function ChatScreen() {
         locations={[0, 0.5, 1]}
         style={styles.flex}
       >
-        <SafeAreaView style={styles.flex} edges={['bottom']}>
+        {/* No SafeAreaView bottom inset here: when the keyboard is open the
+            bar must sit DIRECTLY above it. The safe-area gap is applied to
+            the bar itself only while the keyboard is closed. */}
+        <View style={styles.flex}>
           <KeyboardAvoidingView
             style={styles.flex}
             behavior="padding"
@@ -282,6 +303,9 @@ export default function ChatScreen() {
                 style={styles.flex}
                 inverted
                 keyboardShouldPersistTaps="handled"
+                // Inverted list: ListHeaderComponent renders at the visual
+                // BOTTOM — the thinking dots sit right under the last message.
+                ListHeaderComponent={isLoading ? <ThinkingDots /> : null}
                 keyExtractor={(m) => m.id}
                 // Inverted list: visual top spacing = paddingBottom. Content
                 // scrolls underneath the transparent floating header.
@@ -290,8 +314,9 @@ export default function ChatScreen() {
               />
             )}
 
-            {isLoading && <LoadingSkeleton />}
-
+            {/* Bottom bar area — transparent, floats at the very bottom; hugs
+                the keyboard when open, clears the safe area when closed. */}
+            <View style={{ marginBottom: kbOpen ? 6 : insets.bottom + 8 }}>
             {/* Voice active: dock replaces the input bar, chat stays above */}
             {voiceModeOpen ? (
               <VoiceDock />
@@ -350,8 +375,9 @@ export default function ChatScreen() {
               {rightControl}
             </View>
             )}
+            </View>
           </KeyboardAvoidingView>
-        </SafeAreaView>
+        </View>
       </LinearGradient>
     </AppScreen>
   );
@@ -376,7 +402,6 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     marginHorizontal: 12,
     marginTop: 6,
-    marginBottom: 10,
     backgroundColor: '#ffffff',
     borderRadius: 28,
     paddingHorizontal: 8,

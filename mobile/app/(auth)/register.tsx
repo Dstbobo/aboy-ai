@@ -12,6 +12,7 @@ import { Text, TextInput, Button, HelperText } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/services/auth.service';
 import { useAuthStore } from '@/stores/auth.store';
+import { api } from '@/services/api';
 import { COLORS } from '@/constants/theme';
 import type { UserRole } from '@/constants/roles';
 
@@ -20,6 +21,9 @@ export default function RegisterScreen() {
   const [email, setEmail]               = useState('');
   const [password, setPassword]         = useState('');
   const [confirmPassword, setConfirm]   = useState('');
+  const [institution, setInstitution]   = useState('');
+  const [country, setCountry]           = useState('');
+  const [year, setYear]                 = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError]               = useState('');
   const [loading, setLoading]           = useState(false);
@@ -82,7 +86,19 @@ export default function RegisterScreen() {
         data.session!.access_token,
       );
 
-      // Step 3 — Go to role selection onboarding (skip email verification entirely)
+      // Step 3 — Save signup details to the profile (shown later in Settings)
+      const yearNum = parseInt(year, 10);
+      try {
+        await api.patch('/api/v1/profile', {
+          institution: institution.trim() || undefined,
+          country_code: country.trim() || undefined,
+          graduation_year: Number.isFinite(yearNum) ? yearNum : undefined,
+        });
+      } catch {
+        // non-fatal — user can update later in Settings
+      }
+
+      // Step 4 — Go to role selection onboarding (skip email verification entirely)
       router.replace('/(auth)/onboarding-role');
     } catch (e: any) {
       setError(e.message ?? 'Registration failed. Please try again.');
@@ -145,6 +161,36 @@ export default function RegisterScreen() {
             mode="outlined"
             style={styles.input}
           />
+          <TextInput
+            label="Institution / School"
+            value={institution}
+            onChangeText={setInstitution}
+            mode="outlined"
+            style={styles.input}
+            autoCapitalize="words"
+            placeholder="e.g. University of Lagos"
+          />
+          <View style={styles.rowTwo}>
+            <TextInput
+              label="Country"
+              value={country}
+              onChangeText={setCountry}
+              mode="outlined"
+              style={[styles.input, styles.rowItem]}
+              autoCapitalize="words"
+              placeholder="e.g. Nigeria"
+            />
+            <TextInput
+              label="Year"
+              value={year}
+              onChangeText={(t) => setYear(t.replace(/[^0-9]/g, ''))}
+              mode="outlined"
+              style={[styles.input, styles.rowItemSmall]}
+              keyboardType="number-pad"
+              maxLength={4}
+              placeholder="2027"
+            />
+          </View>
 
           {!!error && <HelperText type="error" style={styles.errorText}>{error}</HelperText>}
 
@@ -177,6 +223,9 @@ const styles = StyleSheet.create({
   subtitle:      { fontSize: 14, color: COLORS.textSecondary, marginTop: 4 },
   form:          { gap: 4 },
   input:         { marginBottom: 8 },
+  rowTwo:        { flexDirection: 'row', gap: 10 },
+  rowItem:       { flex: 1 },
+  rowItemSmall:  { width: 110 },
   errorText:     { lineHeight: 18 },
   button:        { marginTop: 12, borderRadius: 8 },
   buttonContent: { paddingVertical: 6 },

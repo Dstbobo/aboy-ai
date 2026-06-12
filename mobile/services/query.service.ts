@@ -10,14 +10,20 @@ export interface QueryResponse {
   latency_ms: number;
 }
 
+export interface HistoryTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 export async function sendQuery(
   query: string,
   sessionId: string | null,
   signal?: AbortSignal,
+  history?: HistoryTurn[],
 ): Promise<QueryResponse> {
   const { data } = await api.post<QueryResponse>(
     '/api/v1/query',
-    { query, session_id: sessionId },
+    { query, session_id: sessionId, history: history?.slice(-10) },
     { signal },
   );
   return data;

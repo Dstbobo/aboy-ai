@@ -365,3 +365,6 @@ CREATE POLICY "Users read own role requests"
     ON role_change_requests FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "Service role manages requests"
     ON role_change_requests FOR ALL USING (TRUE) WITH CHECK (TRUE);
+
+-- 005: country as free text (collected at signup)
+ALTER TABLE user_profiles ALTER COLUMN country_code TYPE TEXT;
