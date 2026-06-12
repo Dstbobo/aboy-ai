@@ -56,12 +56,14 @@ async def gemini_live_proxy(client_ws: WebSocket) -> None:
                 try:
                     async for message in gemini_ws:
                         counts["out"] += 1
-                        if counts["out"] <= 3 and not isinstance(message, bytes):
-                            logger.info("live: gemini->phone #%d: %.100s", counts["out"], message)
+                        # Gemini sends JSON in BINARY frames. React Native's
+                        # WebSocket cannot read Blob payloads (no Blob.text()),
+                        # so always deliver to the phone as TEXT frames.
                         if isinstance(message, bytes):
-                            await client_ws.send_bytes(message)
-                        else:
-                            await client_ws.send_text(message)
+                            message = message.decode("utf-8", errors="replace")
+                        if counts["out"] <= 3:
+                            logger.info("live: gemini->phone #%d: %.100s", counts["out"], message)
+                        await client_ws.send_text(message)
                 except Exception as exc:  # noqa: BLE001
                     logger.info("live: gemini->client ended: %s", exc)
 

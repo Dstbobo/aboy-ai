@@ -129,23 +129,17 @@ export class LiveSession {
         outputAudioTranscription: {},
       },
     });
-    // Watchdog: evidence shows sends made synchronously inside onopen can be
-    // lost on RN Android while later sends deliver fine. If setupComplete
-    // hasn't arrived, re-send setup once; after that, force a reconnect so
-    // the endpoint-fallback logic takes over instead of hanging forever.
+    // Watchdog: if setupComplete hasn't arrived, RECONNECT (never re-send
+    // setup on the same socket — Gemini treats a duplicate setup as an
+    // invalid argument and kills the session with 1007).
     this.clearSetupTimer();
     this.setupTimer = setTimeout(() => {
       if (this.setupDone || this.closed) return;
-      if (this.setupAttempts < 2) {
-        log('watchdog: no setupComplete after 3s — re-sending setup');
-        this.sendSetup();
-      } else {
-        log('watchdog: still no setupComplete — reconnecting');
-        try {
-          this.ws?.close();
-        } catch {}
-      }
-    }, 3000);
+      log('watchdog: no setupComplete after 5s — reconnecting');
+      try {
+        this.ws?.close();
+      } catch {}
+    }, 5000);
   }
 
   private clearSetupTimer() {
@@ -163,6 +157,9 @@ export class LiveSession {
     const url = `${base}?userId=${encodeURIComponent(this.userId ?? '')}`;
     log('connecting to proxy', url);
     const ws = new WebSocket(url);
+    // If a binary frame ever arrives, deliver it as ArrayBuffer (decodable)
+    // rather than Blob (unreadable in RN).
+    (ws as any).binaryType = 'arraybuffer';
     this.ws = ws;
 
     ws.onopen = () => {
@@ -202,9 +199,19 @@ export class LiveSession {
   private async onMessage(raw: any) {
     let text = raw;
     if (typeof raw !== 'string') {
+      // Binary frame fallback: proxies now convert Gemini's binary JSON to
+      // text, but decode ArrayBuffer here too in case one slips through.
       try {
-        text = await (raw as Blob).text();
+        if (raw instanceof ArrayBuffer) {
+          text = utf8Decode(new Uint8Array(raw));
+        } else if (raw?.text) {
+          text = await (raw as Blob).text();
+        } else {
+          log('unreadable non-string frame dropped');
+          return;
+        }
       } catch {
+        log('failed to decode binary frame');
         return;
       }
     }
@@ -418,6 +425,32 @@ function pcm16ToWavBase64(pcmBase64: string, sampleRate: number): string {
 
 function writeStr(view: DataView, offset: number, str: string) {
   for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+}
+
+// Minimal UTF-8 decoder (Hermes has no TextDecoder).
+function utf8Decode(bytes: Uint8Array): string {
+  let out = '';
+  let i = 0;
+  while (i < bytes.length) {
+    const b = bytes[i];
+    if (b < 0x80) {
+      out += String.fromCharCode(b);
+      i += 1;
+    } else if (b < 0xe0) {
+      out += String.fromCharCode(((b & 0x1f) << 6) | (bytes[i + 1] & 0x3f));
+      i += 2;
+    } else if (b < 0xf0) {
+      out += String.fromCharCode(((b & 0x0f) << 12) | ((bytes[i + 1] & 0x3f) << 6) | (bytes[i + 2] & 0x3f));
+      i += 3;
+    } else {
+      const cp =
+        ((b & 0x07) << 18) | ((bytes[i + 1] & 0x3f) << 12) | ((bytes[i + 2] & 0x3f) << 6) | (bytes[i + 3] & 0x3f);
+      const adj = cp - 0x10000;
+      out += String.fromCharCode(0xd800 + (adj >> 10), 0xdc00 + (adj & 0x3ff));
+      i += 4;
+    }
+  }
+  return out;
 }
 
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';

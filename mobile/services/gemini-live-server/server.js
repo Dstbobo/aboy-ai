@@ -103,15 +103,16 @@ wss.on('connection', (phone, req) => {
       }
     });
 
-    // Gemini -> phone (and accumulate transcript)
+    // Gemini -> phone (and accumulate transcript). Gemini sends JSON in
+    // binary frames; React Native cannot read Blob payloads, so always
+    // forward to the phone as TEXT.
     upstream.on('message', (data, isBinary) => {
+      const text = data.toString('utf8');
       if (phone.readyState === WebSocket.OPEN) {
-        phone.send(data, { binary: isBinary });
+        phone.send(text);
       }
-      if (!isBinary) {
-        accumulateTranscript(session, data);
-        countServerFrame(session, data);
-      }
+      accumulateTranscript(session, text);
+      countServerFrame(session, text);
     });
 
     upstream.on('close', (code, reason) => {

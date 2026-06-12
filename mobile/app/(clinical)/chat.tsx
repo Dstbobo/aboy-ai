@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   FlatList,
@@ -16,14 +16,13 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { OfflineBanner } from '@/components/shared/OfflineBanner';
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton';
+import Voice from '@react-native-voice/voice';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { VoiceDock } from '@/components/voice/VoiceDock';
 import { useChatStore } from '@/stores/chat.store';
 import { useOfflineStore } from '@/stores/offline.store';
 import { useUIStore } from '@/stores/ui.store';
-import { useRecorder } from '@/hooks/useRecorder';
 import { sendQuery } from '@/services/query.service';
-import { transcribeAudio } from '@/services/transcribe.service';
 import { COLORS } from '@/constants/theme';
 import { useAuthStore } from '@/stores/auth.store';
 
@@ -38,7 +37,6 @@ const CHAT_GRADIENT = ['#ffffff', '#fbfcfe', '#eef3fa'] as const;
 export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const [inputText, setInputText] = useState('');
-  const [isTranscribing, setIsTranscribing] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   const user = useAuthStore((s) => s.user);
@@ -55,7 +53,6 @@ export default function ChatScreen() {
   const openPlusSheet = useUIStore((s) => s.openPlusSheet);
   const openVoiceMode = useUIStore((s) => s.openVoiceMode);
   const voiceModeOpen = useUIStore((s) => s.voiceModeOpen);
-  const { isRecording, start, stop, getUri } = useRecorder();
 
   async function sendMessage(textOverride?: string) {
     const text = (textOverride ?? inputText).trim();
@@ -110,73 +107,96 @@ export default function ChatScreen() {
   }
 
   // ── Mic recording bar: X (cancel) | live waveform | ✓ (send as text) ──
+  // On-device speech recognition (@react-native-voice/voice): words appear
+  // INSTANTLY via onSpeechPartialResults; waveform reacts via volume events.
   const BAR_COUNT = 22;
   const waveLevels = useRef<Animated.Value[]>(
     Array.from({ length: BAR_COUNT }, () => new Animated.Value(0.15)),
   ).current;
-  const partialTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const transcribeBusy = useRef(false);
+  const [isListening, setIsListening] = useState(false);
+  const listeningRef = useRef(false);
   const [liveWords, setLiveWords] = useState('');
+  const finalWordsRef = useRef(''); // committed segments across pauses
+  const liveWordsRef = useRef('');
 
-  function animateWave(db: number) {
-    // metering dB ≈ -60 (quiet) .. 0 (loud)
-    const norm = Math.max(0.08, Math.min(1, (db + 50) / 50));
-    const i = Math.floor(Math.random() * BAR_COUNT);
-    Animated.timing(waveLevels[i], { toValue: norm, duration: 110, useNativeDriver: false }).start();
-  }
+  useEffect(() => {
+    Voice.onSpeechPartialResults = (e: any) => {
+      const partial = e?.value?.[0] ?? '';
+      const combined = (finalWordsRef.current + ' ' + partial).trim();
+      liveWordsRef.current = combined;
+      setLiveWords(combined);
+    };
+    Voice.onSpeechResults = (e: any) => {
+      const final = e?.value?.[0] ?? '';
+      if (final) {
+        finalWordsRef.current = (finalWordsRef.current + ' ' + final).trim();
+        liveWordsRef.current = finalWordsRef.current;
+        setLiveWords(finalWordsRef.current);
+      }
+    };
+    Voice.onSpeechVolumeChanged = (e: any) => {
+      // e.value ≈ 0..10 on Android
+      const norm = Math.max(0.08, Math.min(1, (e?.value ?? 0) / 10));
+      const i = Math.floor(Math.random() * BAR_COUNT);
+      Animated.timing(waveLevels[i], { toValue: norm, duration: 100, useNativeDriver: false }).start();
+    };
+    Voice.onSpeechEnd = () => {
+      // Android stops after a pause — restart so the bar keeps listening
+      // until the user taps ✓ or ✕.
+      if (listeningRef.current) Voice.start('en-US').catch(() => {});
+    };
+    Voice.onSpeechError = (e: any) => {
+      const code = String(e?.error?.code ?? '');
+      // 7 = no match, 6 = speech timeout — keep listening through these.
+      if (listeningRef.current && (code === '7' || code === '6')) {
+        Voice.start('en-US').catch(() => {});
+      } else if (listeningRef.current) {
+        console.warn('[stt] error', e?.error);
+      }
+    };
+    return () => {
+      Voice.destroy().then(() => Voice.removeAllListeners()).catch(() => {});
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function beginRecording() {
+    finalWordsRef.current = '';
+    liveWordsRef.current = '';
     setLiveWords('');
-    const ok = await start(animateWave);
-    if (!ok) return;
-    // Live words: the AAC/WAV file is streamable, so periodically transcribe
-    // the partial file while recording continues.
-    partialTimer.current = setInterval(async () => {
-      if (transcribeBusy.current) return;
-      const uri = getUri();
-      if (!uri) return;
-      transcribeBusy.current = true;
-      try {
-        const text = (await transcribeAudio(uri)).trim();
-        if (text) setLiveWords(text);
-      } catch {
-        // partial file not decodable yet — skip
-      } finally {
-        transcribeBusy.current = false;
-      }
-    }, 2500);
-  }
-
-  function clearPartialTimer() {
-    if (partialTimer.current) {
-      clearInterval(partialTimer.current);
-      partialTimer.current = null;
+    try {
+      setIsListening(true);
+      listeningRef.current = true;
+      await Voice.start('en-US');
+    } catch (e) {
+      console.warn('[stt] start failed', (e as Error)?.message);
+      setIsListening(false);
     }
   }
 
   async function cancelRecording() {
-    clearPartialTimer();
-    await stop();
+    setIsListening(false);
+    listeningRef.current = false;
+    try {
+      await Voice.stop();
+      await Voice.cancel();
+    } catch {}
     setLiveWords('');
+    finalWordsRef.current = '';
+    liveWordsRef.current = '';
   }
 
   async function confirmRecording() {
-    clearPartialTimer();
-    const uri = await stop();
-    if (!uri) {
-      setLiveWords('');
-      return;
-    }
-    setIsTranscribing(true);
+    setIsListening(false);
+    listeningRef.current = false;
     try {
-      const text = (await transcribeAudio(uri)).trim();
-      setLiveWords('');
-      if (text) await sendMessage(text); // spoken words sent as a text message
-    } catch {
-      setLiveWords('');
-    } finally {
-      setIsTranscribing(false);
-    }
+      await Voice.stop();
+    } catch {}
+    const text = liveWordsRef.current.trim();
+    setLiveWords('');
+    finalWordsRef.current = '';
+    liveWordsRef.current = '';
+    if (text) await sendMessage(text); // spoken words sent as a text message
   }
 
   const hasChat = messages.length > 0;
@@ -250,7 +270,7 @@ export default function ChatScreen() {
             {/* Voice active: dock replaces the input bar, chat stays above */}
             {voiceModeOpen ? (
               <VoiceDock />
-            ) : isRecording || isTranscribing ? (
+            ) : isListening ? (
               <View>
                 {/* Live words — italic, above the bar, in real time */}
                 {!!liveWords && (
@@ -260,7 +280,7 @@ export default function ChatScreen() {
                 )}
                 <View style={styles.inputCard}>
                   {/* X — cancel */}
-                  <TouchableOpacity style={styles.micBtn} onPress={cancelRecording} hitSlop={6} disabled={isTranscribing}>
+                  <TouchableOpacity style={styles.micBtn} onPress={cancelRecording} hitSlop={6}>
                     <MaterialCommunityIcons name="close" size={24} color={COLORS.text} />
                   </TouchableOpacity>
 
@@ -278,12 +298,8 @@ export default function ChatScreen() {
                   </View>
 
                   {/* ✓ — confirm: send spoken words as a text message */}
-                  <TouchableOpacity style={styles.confirmBtn} onPress={confirmRecording} hitSlop={6} disabled={isTranscribing}>
-                    {isTranscribing ? (
-                      <ActivityIndicator size="small" color="#fff" />
-                    ) : (
-                      <MaterialCommunityIcons name="check" size={24} color="#fff" />
-                    )}
+                  <TouchableOpacity style={styles.confirmBtn} onPress={confirmRecording} hitSlop={6}>
+                    <MaterialCommunityIcons name="check" size={24} color="#fff" />
                   </TouchableOpacity>
                 </View>
               </View>
