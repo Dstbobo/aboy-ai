@@ -8,21 +8,23 @@ from app.models.user import AuthenticatedUser
 
 bearer_scheme = HTTPBearer()
 
-# All valid role IDs — used as whitelist; unknown roles fall back to student_med
-VALID_ROLES = {
-    # Students
-    "student_med", "student_nurse", "student_midwifery", "student_community_health",
-    "student_pharmacy", "student_dental", "student_physio", "student_radiography",
-    "student_med_lab", "student_biomedical", "student_optometry", "student_nutrition",
-    "student_ot", "student_health_info", "student_env_health", "student_slt",
-    # Professionals
-    "pro_junior", "pro_senior", "pro_nurse", "pro_midwife", "pro_community_health",
-    "pro_pharmacist", "pro_paramedic", "pro_public_health", "pro_dental", "pro_physio",
-    "pro_radiographer", "pro_med_lab", "pro_optometrist", "pro_nutritionist",
-    "pro_ot", "pro_health_info", "pro_env_health", "pro_slt",
-    # System
-    "educator", "admin",
-}
+# Roles are prefix-validated: 5 categories + system roles.
+_ROLE_PREFIXES = ("student_", "pro_", "ops_", "edu_", "res_")
+_SYSTEM_ROLES = {"admin", "educator"}
+
+
+def is_valid_role(role: str) -> bool:
+    return role in _SYSTEM_ROLES or role.startswith(_ROLE_PREFIXES)
+
+
+class _PrefixRoleSet:
+    """Backwards-compatible membership object (`role in VALID_ROLES`)."""
+
+    def __contains__(self, role: object) -> bool:
+        return isinstance(role, str) and is_valid_role(role)
+
+
+VALID_ROLES = _PrefixRoleSet()
 
 
 async def get_current_user(

@@ -76,10 +76,9 @@ export function AppHeader({
 }
 
 const styles = StyleSheet.create({
+  // Transparent — floats over the content; content scrolls underneath.
   container: {
-    backgroundColor: '#ffffff',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: COLORS.border,
+    backgroundColor: 'transparent',
   },
   bar: {
     height: 56,

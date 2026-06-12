@@ -1,247 +1,135 @@
-import React, { useState } from 'react';
-import { View, FlatList, StyleSheet, TouchableOpacity } from 'react-native';
-import { Text, Card, Button, ProgressBar, Chip } from 'react-native-paper';
-import { useChatStore } from '@/stores/chat.store';
+import React from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { AppScreen } from '@/components/layout/AppScreen';
+import { useProgressStore } from '@/stores/progress.store';
+import { useAuthStore } from '@/stores/auth.store';
+import { ROLE_LABELS } from '@/constants/roles';
+import { useChatStore } from '@/stores/chat.store';
 import { COLORS } from '@/constants/theme';
 
-interface Flashcard {
-  id: string;
-  question: string;
-  answer: string;
-  source: string;
-  flipped: boolean;
-  rating?: 'easy' | 'medium' | 'hard';
-}
-
-function extractFlashcards(messages: ReturnType<typeof useChatStore.getState>['messages']): Flashcard[] {
-  const cards: Flashcard[] = [];
-  const pairs = [];
-
-  for (let i = 0; i < messages.length - 1; i++) {
-    if (messages[i].role === 'user' && messages[i + 1].role === 'assistant') {
-      pairs.push({ q: messages[i], a: messages[i + 1] });
-    }
-  }
-
-  for (const pair of pairs) {
-    const answer = pair.a.content;
-    const shortAnswer = answer.length > 300 ? answer.slice(0, 300) + '…' : answer;
-    const source = pair.a.citations[0]?.source_name ?? 'Aboy AI';
-    cards.push({
-      id: pair.q.id,
-      question: pair.q.content,
-      answer: shortAnswer,
-      source,
-      flipped: false,
-    });
-  }
-
-  return cards;
-}
-
+/**
+ * Study — learning progress dashboard. Tracks topics automatically as the
+ * user chats and reviews flashcards; surfaces strong and weak areas.
+ */
 export default function StudyScreen() {
-  const messages = useChatStore((s) => s.messages);
-  const [flashcards, setFlashcards] = useState<Flashcard[]>(() => extractFlashcards(messages));
-  const [activeIndex, setActiveIndex] = useState(0);
-  const [mode, setMode] = useState<'list' | 'quiz'>('list');
+  const router = useRouter();
+  const user = useAuthStore((s) => s.user);
+  const { topics, totalQueries, strongTopics, weakTopics } = useProgressStore();
+  const clearChat = useChatStore((s) => s.clearChat);
+  const topicList = Object.values(topics).sort((a, b) => b.queries - a.queries);
+  const strong = strongTopics();
+  const weak = weakTopics();
 
-  const rated = flashcards.filter((c) => c.rating).length;
-
-  function flipCard(id: string) {
-    setFlashcards((prev) => prev.map((c) => (c.id === id ? { ...c, flipped: !c.flipped } : c)));
-  }
-
-  function rateCard(id: string, rating: 'easy' | 'medium' | 'hard') {
-    setFlashcards((prev) => prev.map((c) => (c.id === id ? { ...c, rating } : c)));
-    setActiveIndex((i) => Math.min(i + 1, flashcards.length - 1));
-  }
-
-  if (flashcards.length === 0) {
-    return (
-      <AppScreen title="Study">
-        <View style={styles.empty}>
-          <Text style={styles.emptyIcon}>📚</Text>
-          <Text style={styles.emptyTitle}>No flashcards yet</Text>
-          <Text style={styles.emptyBody}>
-            Ask questions in Chat — each Q&A automatically becomes a flashcard here.
-          </Text>
-        </View>
-      </AppScreen>
-    );
-  }
-
-  if (mode === 'quiz') {
-    const card = flashcards[activeIndex];
-    if (!card) return null;
-
-    return (
-      <AppScreen title="Study">
-      <View style={styles.quizContainer}>
-        <View style={styles.quizHeader}>
-          <Text style={styles.quizProgress}>
-            {activeIndex + 1} / {flashcards.length}
-          </Text>
-          <Button mode="text" onPress={() => setMode('list')}>Back to list</Button>
-        </View>
-        <ProgressBar
-          progress={(activeIndex + 1) / flashcards.length}
-          color={COLORS.primary}
-          style={styles.progressBar}
-        />
-
-        <TouchableOpacity onPress={() => flipCard(card.id)} style={styles.cardTouchable}>
-          <Card style={[styles.quizCard, card.flipped && styles.quizCardFlipped]}>
-            <Card.Content style={styles.quizCardContent}>
-              {!card.flipped ? (
-                <>
-                  <Text style={styles.cardLabel}>QUESTION</Text>
-                  <Text style={styles.cardQuestion}>{card.question}</Text>
-                  <Text style={styles.tapHint}>Tap to reveal answer</Text>
-                </>
-              ) : (
-                <>
-                  <Text style={styles.cardLabel}>ANSWER</Text>
-                  <Text style={styles.cardAnswer}>{card.answer}</Text>
-                  <Text style={styles.sourceText}>Source: {card.source}</Text>
-                </>
-              )}
-            </Card.Content>
-          </Card>
-        </TouchableOpacity>
-
-        {card.flipped && (
-          <View style={styles.ratingRow}>
-            <Button
-              mode="contained"
-              buttonColor={COLORS.error}
-              onPress={() => rateCard(card.id, 'hard')}
-              style={styles.rateBtn}
-            >
-              Hard
-            </Button>
-            <Button
-              mode="contained"
-              buttonColor={COLORS.warning}
-              onPress={() => rateCard(card.id, 'medium')}
-              style={styles.rateBtn}
-            >
-              Medium
-            </Button>
-            <Button
-              mode="contained"
-              buttonColor={COLORS.success}
-              onPress={() => rateCard(card.id, 'easy')}
-              style={styles.rateBtn}
-            >
-              Easy
-            </Button>
-          </View>
-        )}
-      </View>
-      </AppScreen>
-    );
+  function studyTopic(topic: string) {
+    clearChat();
+    router.push('/(clinical)/chat');
+    // Small delay so the chat screen mounts before we could prefill; the user
+    // just types — keeping this simple and predictable.
   }
 
   return (
     <AppScreen title="Study">
-    <View style={styles.flex}>
-      <View style={styles.listHeader}>
-        <Text style={styles.listTitle}>{flashcards.length} flashcards</Text>
-        <Button mode="contained" onPress={() => { setActiveIndex(0); setMode('quiz'); }}>
-          Start Quiz
-        </Button>
-      </View>
-
-      {rated > 0 && (
-        <View style={styles.statsRow}>
-          <Text style={styles.statsText}>
-            {rated}/{flashcards.length} reviewed · {flashcards.filter((c) => c.rating === 'hard').length} hard
-          </Text>
-          <ProgressBar
-            progress={rated / flashcards.length}
-            color={COLORS.primary}
-            style={styles.miniProgress}
-          />
+      <ScrollView contentContainerStyle={styles.content}>
+        {/* Summary */}
+        <View style={styles.summaryCard}>
+          <View style={styles.summaryItem}>
+            <Text style={styles.summaryNum}>{totalQueries}</Text>
+            <Text style={styles.summaryLabel}>Questions asked</Text>
+          </View>
+          <View style={styles.summaryDivider} />
+          <View style={styles.summaryItem}>
+            <Text style={styles.summaryNum}>{topicList.length}</Text>
+            <Text style={styles.summaryLabel}>Topics studied</Text>
+          </View>
+          <View style={styles.summaryDivider} />
+          <View style={styles.summaryItem}>
+            <Text style={styles.summaryNum}>{ROLE_LABELS[user?.role ?? ''] ? '✓' : '—'}</Text>
+            <Text style={styles.summaryLabel}>{ROLE_LABELS[user?.role ?? ''] ?? 'Role'}</Text>
+          </View>
         </View>
-      )}
 
-      <FlatList
-        data={flashcards}
-        keyExtractor={(c) => c.id}
-        contentContainerStyle={styles.list}
-        renderItem={({ item, index }) => (
-          <Card style={styles.card} mode="outlined">
-            <Card.Content>
-              <Text style={styles.cardNum}>#{index + 1}</Text>
-              <Text style={styles.questionText} numberOfLines={2}>{item.question}</Text>
-              {item.rating && (
-                <Chip
-                  compact
-                  style={[
-                    styles.ratingChip,
-                    item.rating === 'easy' && { backgroundColor: '#e8f5e9' },
-                    item.rating === 'medium' && { backgroundColor: '#fff3e0' },
-                    item.rating === 'hard' && { backgroundColor: '#ffebee' },
-                  ]}
-                  textStyle={{ fontSize: 10 }}
-                >
-                  {item.rating}
-                </Chip>
-              )}
-            </Card.Content>
-          </Card>
+        {/* Strong areas */}
+        <Text style={styles.sectionTitle}>💪 Strong areas</Text>
+        {strong.length === 0 ? (
+          <Text style={styles.emptyHint}>Keep studying — strengths show up here as you review.</Text>
+        ) : (
+          strong.map((t) => (
+            <View key={t.topic} style={[styles.topicRow, styles.strongRow]}>
+              <Text style={styles.topicName}>{t.topic}</Text>
+              <Text style={styles.topicMeta}>{t.queries} studied · {t.correct} mastered</Text>
+            </View>
+          ))
         )}
-      />
-    </View>
+
+        {/* Weak areas */}
+        <Text style={styles.sectionTitle}>🎯 Needs work</Text>
+        {weak.length === 0 ? (
+          <Text style={styles.emptyHint}>No weak areas detected yet. Rate flashcards to find them.</Text>
+        ) : (
+          weak.map((t) => (
+            <TouchableOpacity key={t.topic} style={[styles.topicRow, styles.weakRow]} onPress={() => studyTopic(t.topic)}>
+              <Text style={styles.topicName}>{t.topic}</Text>
+              <Text style={styles.topicMeta}>{t.struggled} struggled — tap to study</Text>
+            </TouchableOpacity>
+          ))
+        )}
+
+        {/* All topics */}
+        <Text style={styles.sectionTitle}>📚 All topics</Text>
+        {topicList.length === 0 ? (
+          <View style={styles.empty}>
+            <MaterialCommunityIcons name="book-open-page-variant-outline" size={44} color={COLORS.textSecondary} />
+            <Text style={styles.emptyTitle}>Nothing tracked yet</Text>
+            <Text style={styles.emptyHint}>
+              Ask questions in chat — Aboy AI automatically tracks the topics you study and builds your progress here.
+            </Text>
+          </View>
+        ) : (
+          topicList.map((t) => (
+            <View key={t.topic} style={styles.topicRow}>
+              <Text style={styles.topicName}>{t.topic}</Text>
+              <Text style={styles.topicMeta}>
+                {t.queries}× · last {t.lastStudied ? new Date(t.lastStudied).toLocaleDateString() : '—'}
+              </Text>
+            </View>
+          ))
+        )}
+      </ScrollView>
     </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: COLORS.background },
-  list: { padding: 16, gap: 8 },
-  listHeader: {
+  content: { padding: 16, paddingBottom: 40 },
+  summaryCard: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    paddingBottom: 8,
-  },
-  listTitle: { fontSize: 18, fontWeight: '700', color: COLORS.text },
-  statsRow: { paddingHorizontal: 16, paddingBottom: 8 },
-  statsText: { fontSize: 12, color: COLORS.textSecondary, marginBottom: 4 },
-  miniProgress: { height: 4, borderRadius: 2 },
-  card: { backgroundColor: COLORS.surface },
-  cardNum: { fontSize: 11, color: COLORS.textSecondary, marginBottom: 4 },
-  questionText: { fontSize: 15, color: COLORS.text, lineHeight: 21 },
-  ratingChip: { marginTop: 6, alignSelf: 'flex-start' },
-
-  // Quiz mode
-  quizContainer: { flex: 1, backgroundColor: COLORS.background, padding: 16 },
-  quizHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  quizProgress: { fontSize: 14, color: COLORS.textSecondary, fontWeight: '600' },
-  progressBar: { height: 6, borderRadius: 3, marginBottom: 24 },
-  cardTouchable: { flex: 1 },
-  quizCard: {
-    flex: 1,
     backgroundColor: COLORS.surface,
     borderRadius: 16,
-    elevation: 3,
-    marginBottom: 16,
+    paddingVertical: 18,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginBottom: 8,
   },
-  quizCardFlipped: { backgroundColor: COLORS.secondary },
-  quizCardContent: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
-  cardLabel: { fontSize: 11, fontWeight: '700', color: COLORS.textSecondary, letterSpacing: 1, marginBottom: 16 },
-  cardQuestion: { fontSize: 20, fontWeight: '600', color: COLORS.text, textAlign: 'center', lineHeight: 28 },
-  cardAnswer: { fontSize: 16, color: COLORS.text, textAlign: 'center', lineHeight: 24 },
-  tapHint: { fontSize: 12, color: COLORS.textSecondary, marginTop: 24 },
-  sourceText: { fontSize: 11, color: COLORS.primary, marginTop: 16, fontStyle: 'italic' },
-  ratingRow: { flexDirection: 'row', gap: 8, paddingBottom: 16 },
-  rateBtn: { flex: 1 },
-
-  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
-  emptyIcon: { fontSize: 48, marginBottom: 12 },
-  emptyTitle: { fontSize: 20, fontWeight: '700', color: COLORS.primary, marginBottom: 8 },
-  emptyBody: { fontSize: 14, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 21 },
+  summaryItem: { flex: 1, alignItems: 'center' },
+  summaryDivider: { width: StyleSheet.hairlineWidth, backgroundColor: COLORS.border },
+  summaryNum: { fontSize: 22, fontWeight: '800', color: COLORS.primary },
+  summaryLabel: { fontSize: 12, color: COLORS.textSecondary, marginTop: 3, textAlign: 'center' },
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: COLORS.text, marginTop: 18, marginBottom: 8 },
+  topicRow: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginBottom: 8,
+  },
+  strongRow: { borderColor: '#bfe3d2', backgroundColor: '#f2faf6' },
+  weakRow: { borderColor: '#f2cdbc', backgroundColor: '#fdf6f2' },
+  topicName: { fontSize: 15, fontWeight: '600', color: COLORS.text },
+  topicMeta: { fontSize: 12.5, color: COLORS.textSecondary, marginTop: 3 },
+  empty: { alignItems: 'center', paddingVertical: 24, gap: 8 },
+  emptyTitle: { fontSize: 16, fontWeight: '700', color: COLORS.text },
+  emptyHint: { fontSize: 13.5, color: COLORS.textSecondary, lineHeight: 20, textAlign: 'center' },
 });

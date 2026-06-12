@@ -25,6 +25,7 @@ import { useUIStore } from '@/stores/ui.store';
 import { sendQuery } from '@/services/query.service';
 import { COLORS } from '@/constants/theme';
 import { useAuthStore } from '@/stores/auth.store';
+import { useProgressStore } from '@/stores/progress.store';
 
 // Height of the custom top bar (AppHeader) that sits above the chat body.
 const HEADER_HEIGHT = 56;
@@ -53,6 +54,16 @@ export default function ChatScreen() {
   const openPlusSheet = useUIStore((s) => s.openPlusSheet);
   const openVoiceMode = useUIStore((s) => s.openVoiceMode);
   const voiceModeOpen = useUIStore((s) => s.voiceModeOpen);
+  const pendingPrompt = useUIStore((s) => s.pendingPrompt);
+  const setPendingPrompt = useUIStore((s) => s.setPendingPrompt);
+
+  // Feature screens (My Project, Cases, …) hand off a prefilled prompt.
+  useEffect(() => {
+    if (pendingPrompt) {
+      setInputText(pendingPrompt);
+      setPendingPrompt(null);
+    }
+  }, [pendingPrompt, setPendingPrompt]);
 
   async function sendMessage(textOverride?: string) {
     const text = (textOverride ?? inputText).trim();
@@ -66,6 +77,7 @@ export default function ChatScreen() {
     }
 
     addUserMessage(text);
+    useProgressStore.getState().recordQuery(text); // learning progress
     setLoading(true);
 
     const controller = new AbortController();
@@ -238,7 +250,7 @@ export default function ChatScreen() {
   }
 
   return (
-    <AppScreen withPlusSheet>
+    <AppScreen withPlusSheet edgeToEdge>
       <LinearGradient
         colors={hasChat ? [...CHAT_GRADIENT] : [...HOME_GRADIENT]}
         locations={[0, 0.5, 1]}
@@ -271,7 +283,9 @@ export default function ChatScreen() {
                 inverted
                 keyboardShouldPersistTaps="handled"
                 keyExtractor={(m) => m.id}
-                contentContainerStyle={styles.listContent}
+                // Inverted list: visual top spacing = paddingBottom. Content
+                // scrolls underneath the transparent floating header.
+                contentContainerStyle={[styles.listContent, { paddingBottom: insets.top + HEADER_HEIGHT + 10 }]}
                 renderItem={({ item }) => <MessageBubble message={item} />}
               />
             )}

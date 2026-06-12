@@ -18,6 +18,8 @@ interface UIState {
   optionsSheetOpen: boolean;
   openOptionsSheet: () => void;
   closeOptionsSheet: () => void;
+  pendingPrompt: string | null;
+  setPendingPrompt: (p: string | null) => void;
   toggleWebSearch: () => void;
 }
 
@@ -39,5 +41,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   optionsSheetOpen: false,
   openOptionsSheet: () => set({ optionsSheetOpen: true }),
   closeOptionsSheet: () => set({ optionsSheetOpen: false }),
+  pendingPrompt: null,
+  setPendingPrompt: (pendingPrompt) => set({ pendingPrompt }),
   toggleWebSearch: () => set((s) => ({ webSearchEnabled: !s.webSearchEnabled })),
 }));
