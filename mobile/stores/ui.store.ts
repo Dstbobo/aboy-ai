@@ -15,6 +15,9 @@ interface UIState {
   closeVoiceMode: () => void;
   openVideoMode: () => void;
   closeVideoMode: () => void;
+  optionsSheetOpen: boolean;
+  openOptionsSheet: () => void;
+  closeOptionsSheet: () => void;
   toggleWebSearch: () => void;
 }
 
@@ -33,5 +36,8 @@ export const useUIStore = create<UIState>((set, get) => ({
   closeVoiceMode: () => set({ voiceModeOpen: false }),
   openVideoMode: () => set({ plusSheetOpen: false, videoModeOpen: true }),
   closeVideoMode: () => set({ videoModeOpen: false }),
+  optionsSheetOpen: false,
+  openOptionsSheet: () => set({ optionsSheetOpen: true }),
+  closeOptionsSheet: () => set({ optionsSheetOpen: false }),
   toggleWebSearch: () => set((s) => ({ webSearchEnabled: !s.webSearchEnabled })),
 }));

@@ -154,7 +154,7 @@ export function VoiceOverlay() {
   const firstName = (user?.fullName || '').split(' ')[0] || 'there';
   const aiSpeaking = status === 'speaking';
   const statusLine =
-    status === 'connecting' ? 'Connecting…'
+    status === 'connecting' || status === 'connected' ? 'Connecting…'
     : status === 'reconnecting' ? 'Reconnecting…'
     : status === 'rate_limited' ? 'Busy — retrying…'
     : status === 'error' ? 'Connection error'

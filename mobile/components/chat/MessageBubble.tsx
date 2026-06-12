@@ -14,48 +14,36 @@ interface Props {
 export function MessageBubble({ message }: Props) {
   const isUser = message.role === 'user';
 
-  return (
-    <View style={[styles.container, isUser ? styles.userContainer : styles.aiContainer]}>
-      {message.emergency_triggered && !isUser && (
-        <EmergencyBanner />
-      )}
-      <View style={[styles.bubble, isUser ? styles.userBubble : styles.aiBubble]}>
-        {isUser ? (
+  if (isUser) {
+    return (
+      <View style={styles.userContainer}>
+        <View style={styles.userBubble}>
           <Text style={styles.userText}>{message.content}</Text>
-        ) : (
-          <StreamingText content={message.content} isStreaming={message.isStreaming} />
-        )}
-        {!isUser && message.citations.length > 0 && (
-          <CitationCard citations={message.citations} />
-        )}
+        </View>
       </View>
-      <Text style={styles.timestamp}>
-        {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-      </Text>
+    );
+  }
+
+  // AI responses render full width directly on the background —
+  // no box, no border, no shadow (Claude.ai style).
+  return (
+    <View style={styles.aiContainer}>
+      {message.emergency_triggered && <EmergencyBanner />}
+      <StreamingText content={message.content} isStreaming={message.isStreaming} />
+      {message.citations.length > 0 && <CitationCard citations={message.citations} />}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { marginVertical: 4, maxWidth: '92%' },
-  userContainer: { alignSelf: 'flex-end', alignItems: 'flex-end' },
-  aiContainer: { alignSelf: 'flex-start', alignItems: 'flex-start' },
-  bubble: { borderRadius: 16, padding: 12, elevation: 1 },
+  userContainer: { marginVertical: 6, alignSelf: 'flex-end', maxWidth: '88%' },
   userBubble: {
     backgroundColor: COLORS.primary,
-    borderBottomRightRadius: 4,
-  },
-  aiBubble: {
-    backgroundColor: COLORS.surface,
-    borderBottomLeftRadius: 4,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    borderRadius: 18,
+    borderBottomRightRadius: 5,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
   userText: { color: '#fff', fontSize: 15, lineHeight: 22 },
-  timestamp: {
-    fontSize: 10,
-    color: COLORS.textSecondary,
-    marginTop: 2,
-    marginHorizontal: 4,
-  },
+  aiContainer: { marginVertical: 8, alignSelf: 'stretch', width: '100%' },
 });

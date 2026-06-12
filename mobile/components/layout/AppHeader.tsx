@@ -62,7 +62,7 @@ export function AppHeader({
           <TouchableOpacity
             style={styles.iconBtn}
             hitSlop={8}
-            onPress={onOptions ?? (() => router.push('/(clinical)/settings'))}
+            onPress={onOptions ?? (() => useUIStore.getState().openOptionsSheet())}
             accessibilityLabel="More options"
           >
             <MaterialCommunityIcons name="dots-vertical" size={24} color={COLORS.text} />

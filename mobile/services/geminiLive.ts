@@ -4,9 +4,12 @@ import LiveAudioStream from 'react-native-live-audio-stream';
 
 // Primary: FastAPI backend /ws/live proxy. Fallback: standalone Node proxy.
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? '';
-export const GEMINI_LIVE_URL = API_URL
-  ? `${API_URL.replace(/^http/, 'ws')}/ws/live`
-  : (process.env.EXPO_PUBLIC_GEMINI_LIVE_URL ?? '');
+const NODE_PROXY_URL = process.env.EXPO_PUBLIC_GEMINI_LIVE_URL ?? '';
+const ENDPOINTS: string[] = [
+  ...(API_URL ? [`${API_URL.replace(/^http/, 'ws')}/ws/live`] : []),
+  ...(NODE_PROXY_URL && !NODE_PROXY_URL.includes('REPLACE-WITH') ? [NODE_PROXY_URL] : []),
+];
+export const GEMINI_LIVE_URL = ENDPOINTS[0] ?? '';
 // Live API model with native-audio dialog (verified available on this key via
 // ListModels — gemini-2.0-flash-live-001 is NOT available and closes 1008).
 const LIVE_MODEL = 'models/gemini-2.5-flash-native-audio-latest';
@@ -62,13 +65,15 @@ export class LiveSession {
     this.cb = cb;
   }
 
+  private endpointIndex = 0;
+
   get isConfigured() {
-    return !!GEMINI_LIVE_URL && !GEMINI_LIVE_URL.includes('REPLACE-WITH');
+    return ENDPOINTS.length > 0;
   }
 
   async connect() {
     if (!this.isConfigured) {
-      log('NOT CONFIGURED — EXPO_PUBLIC_GEMINI_LIVE_URL is', JSON.stringify(GEMINI_LIVE_URL));
+      log('NOT CONFIGURED — no Live endpoints available');
       this.cb.onStatus?.('error');
       throw new Error('Gemini Live URL not configured');
     }
@@ -96,14 +101,21 @@ export class LiveSession {
       throw e;
     }
 
+    this.openSocket();
+  }
+
+  /** Open (or re-open on the next fallback endpoint) the proxy WebSocket. */
+  private openSocket() {
     this.cb.onStatus?.('connecting');
-    const url = `${GEMINI_LIVE_URL}?userId=${encodeURIComponent(this.userId ?? '')}`;
+    const base = ENDPOINTS[this.endpointIndex];
+    const url = `${base}?userId=${encodeURIComponent(this.userId ?? '')}`;
     log('connecting to proxy', url);
     const ws = new WebSocket(url);
     this.ws = ws;
 
     ws.onopen = () => {
-      log('proxy WS open — sending setup with model', LIVE_MODEL);
+      log('connected'); // required log: connected
+      log('sending setup with model', LIVE_MODEL);
       this.cb.onStatus?.('connected');
       // Setup MUST be the first and only message until setupComplete arrives.
       this.send({
@@ -130,11 +142,19 @@ export class LiveSession {
     ws.onmessage = (ev) => this.onMessage(ev.data);
     ws.onerror = (e: any) => {
       log('proxy WS error:', e?.message ?? 'unknown');
-      this.cb.onStatus?.('error');
     };
     ws.onclose = (e: any) => {
       log('proxy WS closed', e?.code ?? '', e?.reason ?? '');
-      if (!this.closed) this.cb.onStatus?.('closed');
+      if (this.closed) return;
+      // If we never reached setupComplete on this endpoint, try the next one
+      // (backend /ws/live -> standalone Node proxy) before reporting failure.
+      if (!this.setupDone && this.endpointIndex < ENDPOINTS.length - 1) {
+        this.endpointIndex += 1;
+        log('falling back to endpoint', ENDPOINTS[this.endpointIndex]);
+        this.openSocket();
+        return;
+      }
+      this.cb.onStatus?.(this.setupDone ? 'closed' : 'error');
     };
   }
 
@@ -172,7 +192,7 @@ export class LiveSession {
 
     if (msg.setupComplete) {
       // Gemini is ready — only NOW start streaming mic audio.
-      log('setupComplete — starting mic');
+      log('setupComplete received — starting mic');
       this.setupDone = true;
       this.cb.onStatus?.('listening');
       this.startMic();
@@ -204,7 +224,7 @@ export class LiveSession {
         this.cb.onStatus?.('speaking');
       }
     }
-    if (audioParts) log('received', audioParts, 'audio part(s), buffered:', this.pcmChunks.length);
+    if (audioParts) log('response received —', audioParts, 'audio part(s), buffered:', this.pcmChunks.length);
     if (inT) log('input transcript:', JSON.stringify(inT).slice(0, 80));
     if (outT) log('output transcript:', JSON.stringify(outT).slice(0, 80));
 
@@ -229,7 +249,7 @@ export class LiveSession {
       LiveAudioStream.on('data', (chunk: string) => {
         if (!this.setupDone || this.micMuted) return; // gated until ready / while muted
         this.chunksSent++;
-        if (this.chunksSent === 1) log('first mic chunk sent (len', chunk.length, ')');
+        if (this.chunksSent === 1) log('audio sending (first chunk, len', chunk.length, ')');
         if (this.chunksSent % 50 === 0) log('mic chunks sent:', this.chunksSent);
         this.send({
           realtimeInput: { mediaChunks: [{ mimeType: 'audio/pcm;rate=16000', data: chunk }] },

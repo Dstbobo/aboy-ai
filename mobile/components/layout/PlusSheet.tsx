@@ -14,16 +14,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useUIStore } from '@/stores/ui.store';
 import { COLORS } from '@/constants/theme';
 
+/**
+ * + menu — exactly four options, no duplicates:
+ * Camera, Photos, Files, Web search toggle.
+ * (Voice conversation opens via the input-bar pill, not from here.)
+ */
 export function PlusSheet() {
   const insets = useSafeAreaInsets();
-  const {
-    plusSheetOpen,
-    closePlusSheet,
-    webSearchEnabled,
-    toggleWebSearch,
-    openVoiceMode,
-    openVideoMode,
-  } = useUIStore();
+  const { plusSheetOpen, closePlusSheet, webSearchEnabled, toggleWebSearch } = useUIStore();
 
   function comingSoon(feature: string) {
     closePlusSheet();
@@ -41,26 +39,11 @@ export function PlusSheet() {
         <Pressable style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
           <View style={styles.handle} />
 
-          {/* Camera / Video study mode (Gemini vision) */}
-          <TouchableOpacity style={styles.row} onPress={openVideoMode}>
+          <TouchableOpacity style={styles.row} onPress={() => comingSoon('Camera')}>
             <View style={styles.iconWrap}>
               <MaterialCommunityIcons name="camera-outline" size={22} color={COLORS.primary} />
             </View>
-            <View style={styles.textWrap}>
-              <Text style={styles.rowLabel}>Camera</Text>
-              <Text style={styles.rowSub}>Point at a textbook, notes, or image to ask</Text>
-            </View>
-          </TouchableOpacity>
-
-          {/* Voice conversation (full duplex turn-based) */}
-          <TouchableOpacity style={styles.row} onPress={openVoiceMode}>
-            <View style={styles.iconWrap}>
-              <MaterialCommunityIcons name="waveform" size={22} color={COLORS.primary} />
-            </View>
-            <View style={styles.textWrap}>
-              <Text style={styles.rowLabel}>Voice conversation</Text>
-              <Text style={styles.rowSub}>Talk back and forth, hands-free</Text>
-            </View>
+            <Text style={styles.rowLabel}>Camera</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.row} onPress={() => comingSoon('Photos')}>
@@ -77,7 +60,6 @@ export function PlusSheet() {
             <Text style={styles.rowLabel}>Files</Text>
           </TouchableOpacity>
 
-          {/* Web search toggle */}
           <View style={[styles.row, styles.rowToggle]}>
             <View style={styles.iconWrap}>
               <MaterialCommunityIcons name="web" size={22} color={COLORS.primary} />
@@ -100,11 +82,7 @@ export function PlusSheet() {
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-    justifyContent: 'flex-end',
-  },
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' },
   sheet: {
     backgroundColor: '#ffffff',
     borderTopLeftRadius: 20,
@@ -113,27 +91,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   handle: {
-    alignSelf: 'center',
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: COLORS.border,
-    marginBottom: 14,
+    alignSelf: 'center', width: 40, height: 4, borderRadius: 2,
+    backgroundColor: COLORS.border, marginBottom: 14,
   },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    paddingVertical: 14,
-  },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14 },
   rowToggle: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.border, marginTop: 4 },
   iconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: COLORS.secondary,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: COLORS.secondary, alignItems: 'center', justifyContent: 'center',
   },
   textWrap: { flex: 1 },
   rowLabel: { fontSize: 16, color: COLORS.text, fontWeight: '500' },

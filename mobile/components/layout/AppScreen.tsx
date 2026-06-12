@@ -3,8 +3,8 @@ import { View, StyleSheet } from 'react-native';
 import { AppHeader } from './AppHeader';
 import { SideDrawer } from './SideDrawer';
 import { PlusSheet } from './PlusSheet';
+import { OptionsSheet } from './OptionsSheet';
 import { VoiceOverlay } from '@/components/voice/VoiceOverlay';
-import { VideoMode } from '@/components/voice/VideoMode';
 
 interface AppScreenProps {
   children: React.ReactNode;
@@ -35,11 +35,11 @@ export function AppScreen({
       <AppHeader variant={variant} title={title} showOptions={showOptions} onOptions={onOptions} />
       <View style={styles.body}>{children}</View>
       <SideDrawer />
+      <OptionsSheet />
       {withPlusSheet && (
         <>
           <PlusSheet />
           <VoiceOverlay />
-          <VideoMode />
         </>
       )}
     </View>
