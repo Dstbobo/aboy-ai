@@ -59,6 +59,10 @@ export class LiveSession {
   private setupDone = false;
   private chunksSent = 0;
   private micMuted = false;
+  // Half-duplex: true while AI audio is playing through the loudspeaker.
+  // Mic frames are suppressed during playback so Gemini doesn't hear its own
+  // voice (echo triggered its VAD -> self-interruptions and polluted input).
+  private playingBack = false;
 
   constructor(userId: string | null, cb: LiveCallbacks) {
     this.userId = userId;
@@ -290,7 +294,9 @@ export class LiveSession {
       log('initialising mic', MIC_OPTIONS);
       LiveAudioStream.init(MIC_OPTIONS as any);
       LiveAudioStream.on('data', (chunk: string) => {
-        if (!this.setupDone || this.micMuted) return; // gated until ready / while muted
+        // Gated until ready, while muted, and while AI audio is playing
+        // (half-duplex — prevents echo-triggered self-interruptions).
+        if (!this.setupDone || this.micMuted || this.playingBack) return;
         this.chunksSent++;
         if (this.chunksSent === 1) log('audio sending (first chunk, len', chunk.length, ')');
         if (this.chunksSent % 50 === 0) log('mic chunks sent:', this.chunksSent);
@@ -355,22 +361,26 @@ export class LiveSession {
       await FileSystem.writeAsStringAsync(path, wavB64, { encoding: FileSystem.EncodingType.Base64 });
       await this.stopPlayback();
       log('playing AI audio clip', path.split('/').pop());
+      this.playingBack = true; // half-duplex: mic suppressed from here
       const { sound } = await Audio.Sound.createAsync({ uri: path }, { shouldPlay: true });
       this.sound = sound;
       sound.setOnPlaybackStatusUpdate((st: any) => {
         if (st.didJustFinish) {
-          log('AI audio finished');
+          log('AI audio finished — mic resumed');
           this.stopPlayback();
+          this.cb.onStatus?.('listening');
         }
       });
     } catch (e) {
       log('playback failed:', (e as Error)?.message);
+      this.playingBack = false;
     }
   }
 
   private async stopPlayback() {
     const s = this.sound;
     this.sound = null;
+    this.playingBack = false; // mic resumes on any playback teardown
     if (s) {
       try {
         await s.stopAsync();
