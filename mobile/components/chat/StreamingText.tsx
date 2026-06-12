@@ -14,9 +14,23 @@ interface Props {
  * the response is rendered as an actual vector diagram via react-native-svg;
  * remaining markdown (headings, tables, lists) renders normally around it.
  */
+/**
+ * Models sometimes wrap an ENTIRE answer in a ``` fence — that renders the
+ * whole message as a raw code block (visible ##, **, -). Unwrap it, and
+ * normalise escaped newlines, so markdown always renders properly.
+ */
+function normalizeMarkdown(md: string): string {
+  let out = md.replace(/\\n/g, '\n').trim();
+  const fenceMatch = out.match(/^```([a-zA-Z]*)\n([\s\S]*?)\n?```$/);
+  if (fenceMatch && fenceMatch[1] !== 'svg') {
+    out = fenceMatch[2];
+  }
+  return out;
+}
+
 export function StreamingText({ content, isStreaming }: Props) {
   const { width } = useWindowDimensions();
-  const segments = splitSvgBlocks(content);
+  const segments = splitSvgBlocks(normalizeMarkdown(content));
 
   return (
     <View>

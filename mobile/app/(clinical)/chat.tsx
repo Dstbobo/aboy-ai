@@ -31,6 +31,32 @@ import { useProgressStore } from '@/stores/progress.store';
 // Height of the custom top bar (AppHeader) that sits above the chat body.
 const HEADER_HEIGHT = 56;
 
+// Role-aware conversation starters shown on the empty home screen.
+function startersForRole(role: string): string[] {
+  if (role.startsWith('pro_pharmacist')) {
+    return ['Check a drug interaction', 'Dosing in renal impairment', 'Counsel a patient on warfarin'];
+  }
+  if (role === 'pro_senior' || role === 'pro_junior') {
+    return ['Work through a differential', 'Latest guideline on sepsis', 'Interpret these lab results'];
+  }
+  if (role.startsWith('pro_nurse')) {
+    return ['Pre-op checklist essentials', 'Pressure ulcer staging', 'IV fluid types explained'];
+  }
+  if (role.startsWith('pro_')) {
+    return ['Guideline update in my field', 'Explain a tricky case', 'Patient education tips'];
+  }
+  if (role.startsWith('edu_') || role === 'educator') {
+    return ['Create 5 MCQs on a topic', 'Plan a teaching session', 'Design an OSCE station'];
+  }
+  if (role.startsWith('res_')) {
+    return ['Find papers on a topic', 'Critique a study design', 'Sample size calculation'];
+  }
+  if (role.startsWith('ops_')) {
+    return ['Draft an incident report', 'Write a professional memo', 'Explain a medical term simply'];
+  }
+  return ['Explain the cardiac cycle', 'Quiz me on pharmacology', 'Make this topic simple'];
+}
+
 // Home (no chat yet): white fading into soft Aboy green.
 const HOME_GRADIENT = ['#ffffff', '#f2faf7', '#d7ece5'] as const;
 // During a chat: a different, subtle soft gradient.
@@ -296,6 +322,13 @@ export default function ChatScreen() {
                 <Text style={styles.emptySubtitle}>
                   Ask any healthcare or study question.{'\n'}Every answer is cited from verified sources.
                 </Text>
+                <View style={styles.chipsWrap}>
+                  {startersForRole(user?.role ?? '').map((s) => (
+                    <TouchableOpacity key={s} style={styles.chip} onPress={() => sendMessage(s)}>
+                      <Text style={styles.chipText}>{s}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
               </View>
             ) : (
               <FlatList
@@ -395,22 +428,31 @@ const styles = StyleSheet.create({
   emptyLogoLetter: { color: '#fff', fontSize: 36, fontWeight: '800' },
   emptyTitle: { fontSize: 26, fontWeight: '800', color: COLORS.text, marginBottom: 10 },
   emptySubtitle: { fontSize: 15, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 22 },
+  chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginTop: 20 },
+  chip: {
+    backgroundColor: 'rgba(255,255,255,0.85)',
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(0,0,0,0.1)',
+  },
+  chipText: { fontSize: 13.5, color: COLORS.text, fontWeight: '500' },
 
   // White card, soft shadow, no hard border, on a light background.
+  // Translucent glassy pill — content scrolls visibly underneath; no solid
+  // white slab behind the input elements.
   inputCard: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     marginHorizontal: 12,
     marginTop: 6,
-    backgroundColor: '#ffffff',
+    backgroundColor: 'rgba(244, 247, 250, 0.88)',
     borderRadius: 28,
     paddingHorizontal: 8,
     paddingVertical: 8,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 3 },
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(0,0,0,0.08)',
   },
   plusBtn: {
     width: 40, height: 40, borderRadius: 20,

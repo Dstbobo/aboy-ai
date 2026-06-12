@@ -16,6 +16,9 @@ class ProfileUpdate(BaseModel):
     institution: str | None = None
     country_code: str | None = None
     graduation_year: int | None = None
+    # Role-specific signup details (department, years_experience, job_title,
+    # course, research_area, …) — flexible JSONB.
+    details: dict | None = None
 
 
 @router.patch("/profile")
@@ -40,6 +43,8 @@ async def update_profile(
         update_data["country_code"] = body.country_code
     if body.graduation_year is not None:
         update_data["graduation_year"] = body.graduation_year
+    if body.details is not None:
+        update_data["details"] = body.details
 
     if update_data:
         update_data["updated_at"] = "now()"

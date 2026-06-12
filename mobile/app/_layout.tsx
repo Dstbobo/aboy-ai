@@ -22,7 +22,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
     const inAuthGroup = segments[0] === '(auth)';
     const currentScreen = segments[1] as string | undefined;
-    const onboardingScreens = ['onboarding-role', 'onboarding-specialty'];
+    const onboardingScreens = ['onboarding-role', 'onboarding-specialty', 'onboarding-details'];
 
     if (!isAuthenticated && !inAuthGroup) {
       router.replace('/(auth)/landing');

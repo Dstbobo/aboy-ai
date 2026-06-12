@@ -41,7 +41,7 @@ export default function OnboardingRoleScreen() {
       router.push({ pathname: '/(auth)/onboarding-specialty', params: { role: selected } });
       return;
     }
-    // No specialties for this role — save and finish onboarding directly.
+    // No specialties for this role — save role, then collect role-specific details.
     setSaving(true);
     try {
       await api.patch('/api/v1/profile', { role: selected });
@@ -49,9 +49,8 @@ export default function OnboardingRoleScreen() {
       // non-fatal — local state still updates
     }
     await updateRoleInfo(selected, '');
-    await completeOnboarding();
     setSaving(false);
-    router.replace('/(clinical)/chat');
+    router.push({ pathname: '/(auth)/onboarding-details', params: { role: selected } });
   }
 
   return (

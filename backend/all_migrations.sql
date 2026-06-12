@@ -368,3 +368,6 @@ CREATE POLICY "Service role manages requests"
 
 -- 005: country as free text (collected at signup)
 ALTER TABLE user_profiles ALTER COLUMN country_code TYPE TEXT;
+
+-- 006: flexible role-specific signup details
+ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS details JSONB DEFAULT '{}';

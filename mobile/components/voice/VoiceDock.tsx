@@ -12,6 +12,7 @@ import { useUIStore } from '@/stores/ui.store';
 import { useAuthStore } from '@/stores/auth.store';
 import { useChatStore } from '@/stores/chat.store';
 import { LiveSession, type LiveStatus } from '@/services/geminiLive';
+import { api } from '@/services/api';
 import { ROLE_LABELS } from '@/constants/roles';
 import { COLORS } from '@/constants/theme';
 
@@ -78,33 +79,54 @@ export function VoiceDock() {
   // is closed (camera mode runs its own Live session — avoids two open mics).
   useEffect(() => {
     if (videoModeOpen) return;
-    // Role-aware + continues the SAME conversation as text chat.
-    const recent = useChatStore
-      .getState()
-      .messages.slice(-8)
-      .map((m) => ({ role: m.role, content: m.content }));
-    const session = new LiveSession(
-      {
-        userId: user?.id ?? null,
-        role: user?.role ?? null,
-        subRole: user?.subRole ?? null,
-        roleLabel: ROLE_LABELS[user?.role ?? ''] ?? null,
-        history: recent,
-      },
-      {
-        onStatus: setStatus,
-        onTranscript,
-      },
-    );
-    sessionRef.current = session;
-    session.connect().catch(() => setStatus('error'));
+    let cancelled = false;
+    let session: LiveSession | null = null;
+
+    (async () => {
+      // ALWAYS use the authoritative role from the server profile — the local
+      // store can hold the pre-onboarding default and make voice generic.
+      let role = user?.role ?? null;
+      let subRole = user?.subRole ?? null;
+      try {
+        const { data } = await api.get('/api/v1/profile');
+        if (data?.role) role = data.role;
+        if (data?.sub_role) subRole = data.sub_role;
+        // Keep the local store in sync for the rest of the app.
+        if (data?.role && data.role !== user?.role) {
+          useAuthStore.getState().updateRoleInfo(data.role, data.sub_role ?? '');
+        }
+      } catch {
+        // offline — fall back to the stored role
+      }
+      if (cancelled) return;
+
+      const recent = useChatStore
+        .getState()
+        .messages.slice(-8)
+        .map((m) => ({ role: m.role, content: m.content }));
+
+      session = new LiveSession(
+        {
+          userId: user?.id ?? null,
+          role,
+          subRole,
+          roleLabel: ROLE_LABELS[role ?? ''] ?? null,
+          history: recent,
+        },
+        { onStatus: setStatus, onTranscript },
+      );
+      sessionRef.current = session;
+      session.connect().catch(() => setStatus('error'));
+    })();
+
     return () => {
+      cancelled = true;
       // Flush any unfinished AI turn into the chat before tearing down.
       if (aiTurnRef.current) {
         addAssistantMessage('live' + Date.now(), aiTurnRef.current, [], false);
         aiTurnRef.current = '';
       }
-      session.close();
+      session?.close();
       sessionRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

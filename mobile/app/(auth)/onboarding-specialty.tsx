@@ -28,12 +28,10 @@ export default function OnboardingSpecialtyScreen() {
     } catch {
       // Non-fatal — still proceed to home
     }
-    // Update local store and mark onboarding complete
+    // Update local store, then collect role-specific details (final step)
     await updateRoleInfo(role, selected);
-    await completeOnboarding();
     setLoading(false);
-    // Navigate to home — onboarding complete
-    router.replace('/(clinical)/chat');
+    router.push({ pathname: '/(auth)/onboarding-details', params: { role } });
   }
 
   return (

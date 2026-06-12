@@ -1,6 +1,8 @@
-import React from 'react';
-import { View, StyleSheet } from 'react-native';
+import React, { useState } from 'react';
+import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { Text } from 'react-native-paper';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import type { Message } from '@/stores/chat.store';
 import { CitationCard } from './CitationCard';
 import { StreamingText } from './StreamingText';
@@ -13,6 +15,13 @@ interface Props {
 
 export function MessageBubble({ message }: Props) {
   const isUser = message.role === 'user';
+  const [copied, setCopied] = useState(false);
+
+  async function copyAnswer() {
+    await Clipboard.setStringAsync(message.content);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1600);
+  }
 
   if (isUser) {
     return (
@@ -31,6 +40,18 @@ export function MessageBubble({ message }: Props) {
       {message.emergency_triggered && <EmergencyBanner />}
       <StreamingText content={message.content} isStreaming={message.isStreaming} />
       {message.citations.length > 0 && <CitationCard citations={message.citations} />}
+      {!message.isStreaming && (
+        <TouchableOpacity style={styles.copyBtn} onPress={copyAnswer} hitSlop={8}>
+          <MaterialCommunityIcons
+            name={copied ? 'check' : 'content-copy'}
+            size={15}
+            color={copied ? COLORS.success : COLORS.textSecondary}
+          />
+          <Text style={[styles.copyText, copied && { color: COLORS.success }]}>
+            {copied ? 'Copied' : 'Copy'}
+          </Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -46,4 +67,6 @@ const styles = StyleSheet.create({
   },
   userText: { color: '#fff', fontSize: 15, lineHeight: 22 },
   aiContainer: { marginVertical: 8, alignSelf: 'stretch', width: '100%' },
+  copyBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6, alignSelf: 'flex-start', paddingVertical: 2 },
+  copyText: { fontSize: 12, color: COLORS.textSecondary, fontWeight: '600' },
 });
