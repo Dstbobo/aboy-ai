@@ -99,12 +99,11 @@ export default function ChatScreen() {
   // messages scroll behind it).
   const [barHeight, setBarHeight] = useState(76);
 
-  // Fully transparent Android navigation bar — content draws behind the
-  // home/back/overview area; buttons stay dark and tappable.
+  // Transparency is handled by react-native-edge-to-edge (enforceNavigation
+  // BarContrast:false removes the white scrim, content draws behind). Here we
+  // only ensure the home/back/overview icons stay dark and visible.
   useEffect(() => {
     if (Platform.OS !== 'android') return;
-    NavigationBar.setPositionAsync('absolute').catch(() => {});
-    NavigationBar.setBackgroundColorAsync('#00000000').catch(() => {});
     NavigationBar.setButtonStyleAsync('dark').catch(() => {});
   }, []);
 
