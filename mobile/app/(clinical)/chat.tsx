@@ -447,7 +447,9 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     marginHorizontal: 12,
     marginTop: 6,
-    backgroundColor: '#ffffff',
+    // Translucent glass (~50% opacity) so content shows through; dark text
+    // and the coloured action buttons stay readable. Shadow preserved.
+    backgroundColor: 'rgba(255, 255, 255, 0.5)',
     borderRadius: 28,
     paddingHorizontal: 8,
     paddingVertical: 8,
