@@ -1,3 +1,4 @@
+import asyncio
 from functools import lru_cache
 
 from tavily import AsyncTavilyClient
@@ -22,11 +23,16 @@ async def web_search(query: str) -> list[dict]:
     settings = get_settings()
     client = _get_tavily_client()
     try:
-        response = await client.search(
-            query=query,
-            search_depth="advanced",
-            include_domains=settings.tavily_include_domains,
-            max_results=5,
+        # Hard timeout so a slow/hanging Tavily call can never stall the
+        # pipeline (was causing 60s Tier-3 hangs). "basic" depth is faster.
+        response = await asyncio.wait_for(
+            client.search(
+                query=query,
+                search_depth="basic",
+                include_domains=settings.tavily_include_domains,
+                max_results=5,
+            ),
+            timeout=6.0,
         )
         results = response.get("results", [])
     except Exception:

@@ -94,7 +94,17 @@ async def run_rag_pipeline(
         )
     user_prompt = build_user_prompt(request.query, context, request.history)
 
-    answer, tokens_in, tokens_out = await generate_response(system_prompt, user_prompt, model=model)
+    # Cap output length per tier — short replies generate much faster.
+    if cls.tier == TIER_CONVERSATIONAL:
+        max_tokens = 300
+    elif cls.tier == TIER_STATIC and not cls.detailed:
+        max_tokens = 700
+    else:
+        max_tokens = 1200
+
+    answer, tokens_in, tokens_out = await generate_response(
+        system_prompt, user_prompt, model=model, max_tokens=max_tokens
+    )
 
     if not is_safe_output(answer):
         answer = "I'm unable to provide a response to this query. Please consult a qualified healthcare professional."

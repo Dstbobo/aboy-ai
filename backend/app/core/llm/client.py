@@ -17,7 +17,7 @@ def _get_anthropic_client() -> anthropic.AsyncAnthropic:
 
 
 async def generate_response(
-    system_prompt: str, user_prompt: str, model: str | None = None
+    system_prompt: str, user_prompt: str, model: str | None = None, max_tokens: int | None = None
 ) -> tuple[str, int, int]:
     """Returns (response_text, input_tokens, output_tokens)."""
     settings = get_settings()
@@ -25,7 +25,7 @@ async def generate_response(
 
     message = await client.messages.create(
         model=model or settings.anthropic_model,
-        max_tokens=settings.max_tokens,
+        max_tokens=max_tokens or settings.max_tokens,
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )
