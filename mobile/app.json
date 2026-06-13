@@ -19,7 +19,7 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.aboyai.app",
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "Aboy AI uses the microphone to let you record and send voice questions.",
+        "NSMicrophoneUsageDescription": "Aboy AI uses the microphone so you can ask questions by voice.",
         "NSSpeechRecognitionUsageDescription": "Aboy AI converts your speech to text so you can ask questions by voice."
       }
     },
@@ -29,7 +29,7 @@
         "backgroundColor": "#0a5f52"
       },
       "package": "com.aboyai.app",
-      "versionCode": 2,
+      "versionCode": 3,
       "permissions": [
         "NOTIFICATIONS",
         "RECEIVE_BOOT_COMPLETED",
@@ -37,8 +37,22 @@
         "INTERNET",
         "ACCESS_NETWORK_STATE",
         "RECORD_AUDIO",
-        "CAMERA"
-      ]
+        "CAMERA",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "NOTIFICATIONS",
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
+        "RECORD_AUDIO",
+        "CAMERA",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "runtimeVersion": {
+        "policy": "fingerprint"
+      }
     },
     "web": {
       "bundler": "metro"
@@ -97,6 +111,9 @@
         "projectId": "72f9ee22-4dfa-47ab-b2d4-249349f4cd91"
       }
     },
-    "owner": "aboyai"
+    "owner": "aboyai",
+    "updates": {
+      "url": "https://u.expo.dev/72f9ee22-4dfa-47ab-b2d4-249349f4cd91"
+    }
   }
 }
