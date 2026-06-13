@@ -307,7 +307,7 @@ export default function ChatScreen() {
           <KeyboardAvoidingView
             style={styles.flex}
             behavior="padding"
-            keyboardVerticalOffset={insets.top + HEADER_HEIGHT}
+            keyboardVerticalOffset={0}
           >
             <OfflineBanner />
 
@@ -349,7 +349,7 @@ export default function ChatScreen() {
 
             {/* Bottom bar area — transparent, floats at the very bottom; hugs
                 the keyboard when open, clears the safe area when closed. */}
-            <View style={{ marginBottom: kbOpen ? 6 : insets.bottom + 8 }}>
+            <View style={{ marginBottom: kbOpen ? 0 : insets.bottom + 8 }}>
             {/* Voice active: dock replaces the input bar, chat stays above */}
             {voiceModeOpen ? (
               <VoiceDock />
@@ -439,20 +439,23 @@ const styles = StyleSheet.create({
   },
   chipText: { fontSize: 13.5, color: COLORS.text, fontWeight: '500' },
 
-  // White card, soft shadow, no hard border, on a light background.
-  // Translucent glassy pill — content scrolls visibly underneath; no solid
-  // white slab behind the input elements.
+  // Solid WHITE floating card. Everything around it (the wrapper Views and
+  // the KeyboardAvoidingView) has no background, so content shows through the
+  // transparent space above, below and beside the card — Gemini/Claude style.
   inputCard: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     marginHorizontal: 12,
     marginTop: 6,
-    backgroundColor: 'rgba(244, 247, 250, 0.88)',
+    backgroundColor: '#ffffff',
     borderRadius: 28,
     paddingHorizontal: 8,
     paddingVertical: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0,0,0,0.08)',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 3 },
   },
   plusBtn: {
     width: 40, height: 40, borderRadius: 20,
