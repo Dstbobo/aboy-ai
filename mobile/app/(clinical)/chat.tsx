@@ -92,6 +92,11 @@ export default function ChatScreen() {
     }
   }, [pendingPrompt, setPendingPrompt]);
 
+  // Measured height of the floating input overlay → used as the list's
+  // visual-bottom padding so the latest message clears the card (older
+  // messages scroll behind it).
+  const [barHeight, setBarHeight] = useState(76);
+
   // Keyboard state: bar hugs the keyboard when open, floats above the home
   // indicator (safe area) when closed.
   const [kbOpen, setKbOpen] = useState(false);
@@ -340,16 +345,25 @@ export default function ChatScreen() {
                 // BOTTOM — the thinking dots sit right under the last message.
                 ListHeaderComponent={isLoading ? <ThinkingDots /> : null}
                 keyExtractor={(m) => m.id}
-                // Inverted list: visual top spacing = paddingBottom. Content
-                // scrolls underneath the transparent floating header.
-                contentContainerStyle={[styles.listContent, { paddingBottom: insets.top + HEADER_HEIGHT + 10 }]}
+                // Inverted: paddingBottom = visual TOP (clears floating header);
+                // paddingTop = visual BOTTOM = input height so the newest
+                // message clears the overlay, older ones scroll behind it.
+                contentContainerStyle={[
+                  styles.listContent,
+                  { paddingBottom: insets.top + HEADER_HEIGHT + 10, paddingTop: barHeight + 8 },
+                ]}
                 renderItem={({ item }) => <MessageBubble message={item} />}
               />
             )}
 
-            {/* Bottom bar area — transparent, floats at the very bottom; hugs
-                the keyboard when open, clears the safe area when closed. */}
-            <View style={{ marginBottom: kbOpen ? 0 : insets.bottom + 8 }}>
+            {/* Input OVERLAY — absolutely positioned over the message list so
+                conversation scrolls behind the translucent card. Sits flush on
+                the keyboard when open (KAV pads the box), clears the safe area
+                when closed. */}
+            <View
+              style={[styles.inputOverlay, { paddingBottom: kbOpen ? 0 : insets.bottom + 8 }]}
+              onLayout={(e) => setBarHeight(e.nativeEvent.layout.height)}
+            >
             {/* Voice active: dock replaces the input bar, chat stays above */}
             {voiceModeOpen ? (
               <VoiceDock />
@@ -419,6 +433,10 @@ export default function ChatScreen() {
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   listContent: { paddingHorizontal: 16, paddingVertical: 16 },
+  // Floating input overlay — absolute over the conversation. Positioned at the
+  // bottom of the KeyboardAvoidingView's padding box, so it rides above the
+  // keyboard when open and the home indicator when closed.
+  inputOverlay: { position: 'absolute', left: 0, right: 0, bottom: 0 },
 
   emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
   emptyLogo: {
