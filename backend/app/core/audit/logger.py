@@ -7,8 +7,22 @@ logger = logging.getLogger(__name__)
 
 
 async def log_query(event: AuditEvent) -> None:
+    db = await get_db()
+
+    # The session row MUST exist first: query_audit_log.session_id has a
+    # foreign key to query_sessions(id). Without this upsert every audit
+    # insert fails (23503) and no history is ever saved.
     try:
-        db = await get_db()
+        await db.table("query_sessions").upsert({
+            "id": event.session_id,
+            "user_id": event.user_id,
+            "last_query_at": "now()",
+            "is_active": True,
+        }).execute()
+    except Exception as exc:
+        logger.error("Session upsert failed: %s", exc)
+
+    try:
         await db.table("query_audit_log").insert(event.model_dump()).execute()
     except Exception as exc:
         # Audit failure must never surface to the user — log and continue
