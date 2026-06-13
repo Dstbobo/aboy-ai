@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Animated,
   Keyboard,
+  useWindowDimensions,
 } from 'react-native';
 import { Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -66,6 +67,11 @@ const CHAT_GRADIENT = ['#ffffff', '#fbfcfe', '#eef3fa'] as const;
 
 export default function ChatScreen() {
   const insets = useSafeAreaInsets();
+  const { height: screenHeight } = useWindowDimensions();
+  const listRef = useRef<FlatList>(null);
+  // Tall bottom spacer so the latest user message can scroll up to the top,
+  // leaving the screen below it for the AI answer to flow into.
+  const bottomSpacer = Math.round(screenHeight * 0.7);
   const [inputText, setInputText] = useState('');
   const abortRef = useRef<AbortController | null>(null);
 
@@ -133,6 +139,9 @@ export default function ChatScreen() {
     addUserMessage(text);
     useProgressStore.getState().recordQuery(text); // learning progress
     setLoading(true);
+    // Scroll the just-sent message up to the top; the tall bottom spacer means
+    // scrollToEnd lands the user message near the top with room for the answer.
+    setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 60);
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -283,7 +292,7 @@ export default function ChatScreen() {
 
   const hasChat = messages.length > 0;
   const isTyping = inputText.trim().length > 0;
-  const data = [...messages].reverse(); // inverted list shows newest at the bottom
+  const data = messages; // normal order: oldest -> newest (top -> bottom)
   const firstName = (user?.fullName || '').split(' ')[0];
 
   // Right-side control: stop (AI responding) > send (typing) > waveform pill (default).
@@ -343,22 +352,19 @@ export default function ChatScreen() {
               </View>
             ) : (
               <FlatList
+                ref={listRef}
                 data={data}
                 style={styles.flex}
-                inverted
                 keyboardShouldPersistTaps="handled"
-                // Inverted list: ListHeaderComponent renders at the visual
-                // BOTTOM — the thinking dots sit right under the last message.
-                ListHeaderComponent={isLoading ? <ThinkingDots /> : null}
+                // Thinking dots render after the last message (where the answer appears).
+                ListFooterComponent={isLoading ? <ThinkingDots /> : null}
                 keyExtractor={(m) => m.id}
-                // Inverted: paddingBottom = visual TOP (clears floating header);
-                // paddingTop = visual BOTTOM = input height so the newest
-                // message clears the overlay, older ones scroll behind it.
+                // Top: clear the floating header. Bottom: a tall spacer + input
+                // height so the newest USER message can scroll up near the top,
+                // leaving room for the AI answer to flow in below it (Gemini-style).
                 contentContainerStyle={[
                   styles.listContent,
-                  // Visual BOTTOM buffer so the last message scrolls fully clear
-                  // of the floating pill (>= 100, or the measured bar height).
-                  { paddingBottom: insets.top + HEADER_HEIGHT + 10, paddingTop: Math.max(100, barHeight + 8) },
+                  { paddingTop: insets.top + HEADER_HEIGHT + 10, paddingBottom: barHeight + bottomSpacer },
                 ]}
                 renderItem={({ item }) => <MessageBubble message={item} />}
               />
