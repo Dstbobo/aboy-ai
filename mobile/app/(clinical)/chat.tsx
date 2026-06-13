@@ -26,7 +26,7 @@ import { VoiceDock } from '@/components/voice/VoiceDock';
 import { useChatStore } from '@/stores/chat.store';
 import { useOfflineStore } from '@/stores/offline.store';
 import { useUIStore } from '@/stores/ui.store';
-import { sendQuery } from '@/services/query.service';
+import { streamQuery } from '@/services/streamQuery';
 import { COLORS } from '@/constants/theme';
 import { useAuthStore } from '@/stores/auth.store';
 import { useProgressStore } from '@/stores/progress.store';
@@ -73,7 +73,6 @@ export default function ChatScreen() {
   // leaving the screen below it for the AI answer to flow into.
   const bottomSpacer = Math.round(screenHeight * 0.7);
   const [inputText, setInputText] = useState('');
-  const abortRef = useRef<AbortController | null>(null);
 
   const user = useAuthStore((s) => s.user);
   const {
@@ -84,7 +83,11 @@ export default function ChatScreen() {
     addUserMessage,
     addAssistantMessage,
     setSession,
+    startStreaming,
+    appendStream,
+    finaliseStream,
   } = useChatStore();
+  const stopStreamRef = useRef<(() => void) | null>(null);
   const { isOffline, enqueueQuery } = useOfflineStore();
   const openPlusSheet = useUIStore((s) => s.openPlusSheet);
   const openVoiceMode = useUIStore((s) => s.openVoiceMode);
@@ -143,46 +146,69 @@ export default function ChatScreen() {
     // scrollToEnd lands the user message near the top with room for the answer.
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 60);
 
-    const controller = new AbortController();
-    abortRef.current = controller;
+    // One continuous thread: include recent turns (typed AND voice).
+    const history = useChatStore
+      .getState()
+      .messages.slice(-10)
+      .map((m) => ({ role: m.role, content: m.content }));
+
+    const aiId = 'ai' + Date.now();
+    let started = false;
+    let finished = false;
 
     try {
-      // One continuous thread: include recent turns (typed AND voice).
-      const history = useChatStore
-        .getState()
-        .messages.slice(-10)
-        .map((m) => ({ role: m.role, content: m.content }));
-      const result = await sendQuery(text, sessionId, controller.signal, history);
-      if (!sessionId) setSession(result.session_id);
-      addAssistantMessage(
-        result.session_id + Date.now(),
-        result.answer,
-        result.citations,
-        result.emergency_triggered,
-      );
-    } catch (e: any) {
-      const canceled = e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED' || controller.signal.aborted;
-      if (!canceled) {
-        const status = e?.response?.status;
-        const detail = e?.response?.data?.detail;
-        console.warn('[chat] query failed', { status, detail, message: e?.message, code: e?.code });
-        let friendly = 'Sorry, I encountered an error. Please try again.';
-        if (status === 401) friendly = 'Your session expired. Please sign out and sign in again.';
-        else if (status === 429) friendly = 'You’ve hit the daily query limit. Please try again later.';
-        else if (status === 503) friendly = 'The AI service is temporarily unavailable. Please try again shortly.';
-        else if (e?.code === 'ECONNABORTED') friendly = 'The request timed out. Please check your connection and try again.';
-        else if (!status) friendly = 'Network error — please check your connection and try again.';
-        addAssistantMessage('err' + Date.now(), friendly, [], false);
-      }
-    } finally {
-      abortRef.current = null;
+      stopStreamRef.current = await streamQuery(text, sessionId, history, {
+        onStart: (sid) => {
+          if (!sessionId) setSession(sid);
+        },
+        onToken: (chunk) => {
+          if (!started) {
+            started = true;
+            startStreaming(aiId); // first token → swap the thinking dots for the bubble
+          }
+          appendStream(chunk);
+        },
+        onMeta: (citations, emergency) => {
+          finaliseStream(aiId, citations as any, emergency);
+        },
+        onDone: () => {
+          if (finished) return;
+          finished = true;
+          if (!started) {
+            // No tokens arrived (e.g. empty) — drop the loading state.
+            addAssistantMessage('err' + Date.now(), 'No response received. Please try again.', [], false);
+          }
+          stopStreamRef.current = null;
+          setLoading(false);
+        },
+        onError: (e: any) => {
+          if (finished) return;
+          finished = true;
+          const status = e?.response?.status;
+          console.warn('[chat] stream failed', { status, code: e?.code });
+          let friendly = 'Sorry, I encountered an error. Please try again.';
+          if (status === 401) friendly = 'Your session expired. Please sign out and sign in again.';
+          else if (status === 429) friendly = 'You’ve hit the daily query limit. Please try again later.';
+          else if (status === 503) friendly = 'The AI service is temporarily unavailable. Please try again shortly.';
+          else if (e?.code === 'ECONNABORTED') friendly = 'The request timed out. Please try again.';
+          if (started) finaliseStream(aiId, [], false);
+          else addAssistantMessage('err' + Date.now(), friendly, [], false);
+          stopStreamRef.current = null;
+          setLoading(false);
+        },
+      });
+    } catch (e) {
+      addAssistantMessage('err' + Date.now(), 'Network error — please check your connection.', [], false);
       setLoading(false);
     }
   }
 
   function stopGenerating() {
-    abortRef.current?.abort();
-    abortRef.current = null;
+    // Stop the stream; keep whatever text already arrived.
+    stopStreamRef.current?.();
+    stopStreamRef.current = null;
+    const streaming = useChatStore.getState().messages.find((m) => m.isStreaming);
+    if (streaming) finaliseStream(streaming.id, [], false);
     setLoading(false);
   }
 
@@ -356,8 +382,8 @@ export default function ChatScreen() {
                 data={data}
                 style={styles.flex}
                 keyboardShouldPersistTaps="handled"
-                // Thinking dots render after the last message (where the answer appears).
-                ListFooterComponent={isLoading ? <ThinkingDots /> : null}
+                // Thinking dots show only until the first token streams in.
+                ListFooterComponent={isLoading && !messages.some((m) => m.isStreaming) ? <ThinkingDots /> : null}
                 keyExtractor={(m) => m.id}
                 // Top: clear the floating header. Bottom: a tall spacer + input
                 // height so the newest USER message can scroll up near the top,
