@@ -7,7 +7,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.v1 import admin, audit, auth, feedback, knowledge, live, notifications, profile, query, stream, streak, transcribe
+from app.api.v1 import admin, audit, auth, feedback, history, knowledge, live, notifications, profile, query, stream, streak, transcribe
 from app.config import get_settings
 
 logging.basicConfig(level=logging.INFO)
@@ -162,6 +162,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router, prefix="/api/v1", tags=["auth"])
     app.include_router(query.router, prefix="/api/v1", tags=["query"])
     app.include_router(transcribe.router, prefix="/api/v1", tags=["transcribe"])
+    app.include_router(history.router, prefix="/api/v1", tags=["history"])
     app.include_router(live.router, tags=["live"])  # /ws/live WebSocket proxy
     app.include_router(stream.router, prefix="/api/v1", tags=["query"])
     app.include_router(streak.router, prefix="/api/v1", tags=["study"])

@@ -162,6 +162,13 @@ export default function RegisterScreen() {
           <Button mode="text" onPress={() => router.back()} style={styles.link}>
             Already have an account? Sign In
           </Button>
+
+          <Text style={styles.consent}>
+            By creating an account you agree to our{' '}
+            <Text style={styles.consentLink} onPress={() => router.push('/(legal)/terms')}>Terms</Text>
+            {' '}and{' '}
+            <Text style={styles.consentLink} onPress={() => router.push('/(legal)/privacy')}>Privacy Policy</Text>.
+          </Text>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -184,4 +191,6 @@ const styles = StyleSheet.create({
   button:        { marginTop: 12, borderRadius: 8 },
   buttonContent: { paddingVertical: 6 },
   link:          { marginTop: 8 },
+  consent:       { fontSize: 12, color: COLORS.textSecondary, textAlign: 'center', marginTop: 12, lineHeight: 18 },
+  consentLink:   { color: COLORS.primary, fontWeight: '600' },
 });

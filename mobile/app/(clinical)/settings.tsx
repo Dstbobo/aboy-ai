@@ -165,6 +165,13 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        <Text style={styles.sectionLabel}>LEGAL</Text>
+        <View style={styles.card}>
+          <Row icon="shield-lock-outline" label="Privacy Policy" onPress={() => router.push('/(legal)/privacy')} />
+          <View style={styles.legalDivider} />
+          <Row icon="file-document-outline" label="Terms & Conditions" onPress={() => router.push('/(legal)/terms')} />
+        </View>
+
         <View style={styles.card}>
           <Row icon="logout" label="Sign Out" destructive onPress={handleSignOut} />
         </View>
@@ -291,6 +298,7 @@ const styles = StyleSheet.create({
   progressLabel: { fontSize: 11.5, color: COLORS.textSecondary },
   progressLink: { fontSize: 13.5, color: COLORS.primary, fontWeight: '600' },
   version: { textAlign: 'center', color: COLORS.textSecondary, fontSize: 12, marginTop: 10 },
+  legalDivider: { height: StyleSheet.hairlineWidth, backgroundColor: COLORS.border, marginLeft: 36 },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' },
   sheet: {
     backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20,

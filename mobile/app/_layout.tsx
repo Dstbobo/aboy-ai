@@ -24,6 +24,9 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     const currentScreen = segments[1] as string | undefined;
     const onboardingScreens = ['onboarding-role', 'onboarding-specialty', 'onboarding-details'];
 
+    // Legal docs (Privacy/Terms) are public — reachable signed in OR out.
+    if (segments[0] === '(legal)') return;
+
     if (!isAuthenticated && !inAuthGroup) {
       router.replace('/(auth)/landing');
     } else if (isAuthenticated && inAuthGroup) {
@@ -67,6 +70,7 @@ export default function RootLayout() {
               <Stack.Screen name="(auth)" />
               <Stack.Screen name="(clinical)" />
               <Stack.Screen name="(admin)" />
+              <Stack.Screen name="(legal)" />
             </Stack>
           </AuthGuard>
         </PaperProvider>
