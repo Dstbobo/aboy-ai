@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
+import { KeyboardStickyView } from 'react-native-keyboard-controller';
 import * as NavigationBar from 'expo-navigation-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -99,11 +99,12 @@ export default function ChatScreen() {
   // messages scroll behind it).
   const [barHeight, setBarHeight] = useState(76);
 
-  // Match the Android navigation bar to our white canvas with dark icons, so
-  // the system home/back/overview area blends in instead of a harsh block.
+  // Fully transparent Android navigation bar — content draws behind the
+  // home/back/overview area; buttons stay dark and tappable.
   useEffect(() => {
     if (Platform.OS !== 'android') return;
-    NavigationBar.setBackgroundColorAsync('#FFFFFF').catch(() => {});
+    NavigationBar.setPositionAsync('absolute').catch(() => {});
+    NavigationBar.setBackgroundColorAsync('#00000000').catch(() => {});
     NavigationBar.setButtonStyleAsync('dark').catch(() => {});
   }, []);
 
@@ -319,11 +320,7 @@ export default function ChatScreen() {
             bar must sit DIRECTLY above it. The safe-area gap is applied to
             the bar itself only while the keyboard is closed. */}
         <View style={styles.flex}>
-          <KeyboardAvoidingView
-            style={styles.flex}
-            behavior="padding"
-            keyboardVerticalOffset={0}
-          >
+          <View style={styles.flex}>
             <OfflineBanner />
 
             {!hasChat ? (
@@ -372,7 +369,8 @@ export default function ChatScreen() {
                 conversation scrolls behind the translucent card. Sits flush on
                 the keyboard when open (KAV pads the box), clears the safe area
                 when closed. */}
-            <View
+            <KeyboardStickyView
+              offset={{ closed: 0, opened: 0 }}
               style={[styles.inputOverlay, { paddingBottom: kbOpen ? 0 : insets.bottom + 8 }]}
               onLayout={(e) => setBarHeight(e.nativeEvent.layout.height)}
             >
@@ -434,8 +432,8 @@ export default function ChatScreen() {
               {rightControl}
             </View>
             )}
-            </View>
-          </KeyboardAvoidingView>
+            </KeyboardStickyView>
+          </View>
         </View>
       </LinearGradient>
     </AppScreen>
