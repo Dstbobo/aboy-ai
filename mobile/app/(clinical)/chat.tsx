@@ -10,8 +10,10 @@ import {
   Animated,
   Keyboard,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
+import * as NavigationBar from 'expo-navigation-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { MessageBubble } from '@/components/chat/MessageBubble';
@@ -96,6 +98,14 @@ export default function ChatScreen() {
   // visual-bottom padding so the latest message clears the card (older
   // messages scroll behind it).
   const [barHeight, setBarHeight] = useState(76);
+
+  // Match the Android navigation bar to our white canvas with dark icons, so
+  // the system home/back/overview area blends in instead of a harsh block.
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    NavigationBar.setBackgroundColorAsync('#FFFFFF').catch(() => {});
+    NavigationBar.setButtonStyleAsync('dark').catch(() => {});
+  }, []);
 
   // Keyboard state: bar hugs the keyboard when open, floats above the home
   // indicator (safe area) when closed.
@@ -350,7 +360,9 @@ export default function ChatScreen() {
                 // message clears the overlay, older ones scroll behind it.
                 contentContainerStyle={[
                   styles.listContent,
-                  { paddingBottom: insets.top + HEADER_HEIGHT + 10, paddingTop: barHeight + 8 },
+                  // Visual BOTTOM buffer so the last message scrolls fully clear
+                  // of the floating pill (>= 100, or the measured bar height).
+                  { paddingBottom: insets.top + HEADER_HEIGHT + 10, paddingTop: Math.max(100, barHeight + 8) },
                 ]}
                 renderItem={({ item }) => <MessageBubble message={item} />}
               />
@@ -465,15 +477,16 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     marginHorizontal: 12,
     marginTop: 6,
-    // Translucent glass (~50% opacity) so content shows through; dark text
-    // and the coloured action buttons stay readable. Shadow preserved.
-    backgroundColor: 'rgba(255, 255, 255, 0.5)',
-    borderRadius: 28,
+    // Solid white pill — acts as a mask so scrolling messages/dividers can't
+    // bleed through and overlap the input. zIndex keeps it above the list.
+    backgroundColor: '#FFFFFF',
+    zIndex: 99,
+    borderRadius: 32,
     paddingHorizontal: 8,
     paddingVertical: 8,
-    elevation: 4,
+    elevation: 6,
     shadowColor: '#000',
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.12,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 3 },
   },

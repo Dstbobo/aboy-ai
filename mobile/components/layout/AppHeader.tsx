@@ -77,8 +77,17 @@ export function AppHeader({
 
 const styles = StyleSheet.create({
   // Transparent — floats over the content; content scrolls underneath.
+  // Solid white mask so scrolled message text/dividers can't bleed up into
+  // the title row or the device status bar. Sits above content (zIndex) with
+  // a soft elevation to read as a header.
   container: {
-    backgroundColor: 'transparent',
+    backgroundColor: '#FFFFFF',
+    zIndex: 99,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
   },
   bar: {
     height: 56,
