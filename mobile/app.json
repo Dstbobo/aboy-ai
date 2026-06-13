@@ -51,7 +51,7 @@
         "android.permission.RECORD_AUDIO"
       ],
       "runtimeVersion": {
-        "policy": "fingerprint"
+        "policy": "appVersion"
       }
     },
     "web": {
