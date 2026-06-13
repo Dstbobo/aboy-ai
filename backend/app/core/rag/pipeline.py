@@ -2,11 +2,19 @@ import asyncio
 import hashlib
 import time
 
+from app.config import get_settings
 from app.core.audit.logger import log_query
 from app.core.audit.models import AuditEvent
+from app.core.cache import cache_get, cache_set, query_hash, TTL_RESPONSE
 from app.core.llm.client import generate_response
 from app.core.llm.prompts import build_user_prompt, get_system_prompt
 from app.core.llm.safety import is_safe_output
+from app.core.rag.classifier import (
+    TIER_CONVERSATIONAL,
+    TIER_DYNAMIC,
+    TIER_STATIC,
+    classify,
+)
 from app.core.rag.context_builder import build_context
 from app.core.rag.embedder import embed_query
 from app.core.rag.reranker import rerank_chunks
@@ -14,8 +22,17 @@ from app.core.rag.retriever import retrieve_chunks
 from app.core.rag.web_search import web_search
 from app.models.query import CitationModel, QueryRequest, QueryResponse
 from app.models.user import AuthenticatedUser
-from app.config import get_settings
 from app.utils.emergency import check_emergency
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+async def _vector_retrieve(query: str) -> list[dict]:
+    """Embedding + pgvector search as one task (so it can run in parallel)."""
+    embedding = await embed_query(query)
+    return await retrieve_chunks(embedding)
 
 
 async def run_rag_pipeline(
@@ -26,30 +43,83 @@ async def run_rag_pipeline(
 ) -> QueryResponse:
     start = time.monotonic()
     settings = get_settings()
-
     emergency_triggered = check_emergency(request.query)
 
-    query_embedding, web_results = await asyncio.gather(
-        embed_query(request.query),
-        web_search(request.query),
-    )
+    cls = classify(request.query)
 
-    raw_chunks = await retrieve_chunks(query_embedding)
-    reranked = rerank_chunks(raw_chunks)
+    # ── Exact response cache (skip the entire pipeline) ──
+    # Keyed by normalized query + role so personalised answers stay correct.
+    resp_key = f"resp:{user.role}:{query_hash(request.query)}"
+    if not request.history:  # only reuse for fresh (non-follow-up) questions
+        cached = await cache_get(resp_key)
+        if cached:
+            latency_ms = int((time.monotonic() - start) * 1000)
+            logger.info("tier=%d CACHE_HIT latency=%dms q=%.40s", cls.tier, latency_ms, request.query)
+            return QueryResponse(
+                answer=cached["answer"],
+                citations=[CitationModel(**c) for c in cached["citations"]],
+                session_id=session_id,
+                emergency_triggered=emergency_triggered,
+                model_used=cached.get("model_used", settings.anthropic_model),
+                latency_ms=latency_ms,
+            )
 
-    context = build_context(reranked, web_results)
+    # ── Model selection (tiering) ──
+    haiku = settings.anthropic_haiku_model
+    sonnet = settings.anthropic_model
+    model = haiku if (cls.tier == TIER_CONVERSATIONAL or (cls.tier == TIER_STATIC and not cls.detailed)) else sonnet
+
+    # ── Retrieval (tier-aware, parallel where both are needed) ──
+    reranked: list[dict] = []
+    web_results: list[dict] = []
+
+    if cls.tier == TIER_CONVERSATIONAL:
+        pass  # no retrieval
+    elif cls.tier == TIER_STATIC:
+        raw = await _vector_retrieve(request.query)  # vector only, no Tavily
+        reranked = rerank_chunks(raw)
+    else:  # TIER_DYNAMIC — vector + web in parallel: total = max(), not sum()
+        vec_task = asyncio.create_task(_vector_retrieve(request.query))
+        web_task = asyncio.create_task(web_search(request.query))
+        raw, web_results = await asyncio.gather(vec_task, web_task)
+        reranked = rerank_chunks(raw)
+
+    # ── Generate ──
+    context = build_context(reranked, web_results) if (reranked or web_results) else ""
     system_prompt = get_system_prompt(user.role, getattr(user, "sub_role", None))
+    if cls.tier == TIER_CONVERSATIONAL:
+        system_prompt += (
+            " This is a brief conversational message — reply naturally and concisely "
+            "without citations or clinical detail."
+        )
     user_prompt = build_user_prompt(request.query, context, request.history)
 
-    answer, tokens_in, tokens_out = await generate_response(system_prompt, user_prompt)
+    answer, tokens_in, tokens_out = await generate_response(system_prompt, user_prompt, model=model)
 
     if not is_safe_output(answer):
         answer = "I'm unable to provide a response to this query. Please consult a qualified healthcare professional."
 
     citations = _build_citations(reranked, web_results)
-
     latency_ms = int((time.monotonic() - start) * 1000)
     ip_hash = hashlib.sha256(client_ip.encode()).hexdigest() if client_ip else None
+
+    logger.info(
+        "tier=%d model=%s vec=%d web=%d latency=%dms q=%.40s",
+        cls.tier, "haiku" if model == haiku else "sonnet",
+        len(reranked), len(web_results), latency_ms, request.query,
+    )
+
+    # Populate response cache (fresh questions only).
+    if not request.history and answer:
+        await cache_set(
+            resp_key,
+            {
+                "answer": answer,
+                "citations": [c.model_dump() for c in citations],
+                "model_used": model,
+            },
+            TTL_RESPONSE,
+        )
 
     audit_event = AuditEvent(
         user_id=user.user_id,
@@ -57,11 +127,11 @@ async def run_rag_pipeline(
         session_id=session_id,
         query_raw=request.query,
         query_enhanced=None,
-        query_classification=None,
+        query_classification=f"tier{cls.tier}",
         sources_retrieved=[{"id": c.get("id"), "similarity": c.get("similarity")} for c in reranked],
         sources_cited=[c.model_dump() for c in citations],
         response_text=answer,
-        model_used=settings.anthropic_model,
+        model_used=model,
         tokens_input=tokens_in,
         tokens_output=tokens_out,
         latency_ms=latency_ms,
@@ -77,14 +147,13 @@ async def run_rag_pipeline(
         citations=citations,
         session_id=session_id,
         emergency_triggered=emergency_triggered,
-        model_used=settings.anthropic_model,
+        model_used=model,
         latency_ms=latency_ms,
     )
 
 
 def _build_citations(chunks: list[dict], web_results: list[dict]) -> list[CitationModel]:
     citations: list[CitationModel] = []
-
     for chunk in chunks:
         citations.append(CitationModel(
             source_id=chunk.get("source_id", ""),
@@ -94,7 +163,6 @@ def _build_citations(chunks: list[dict], web_results: list[dict]) -> list[Citati
             evidence_grade=chunk.get("metadata", {}).get("evidence_grade"),
             similarity=chunk.get("similarity", 0.0),
         ))
-
     for result in web_results:
         citations.append(CitationModel(
             source_id="web",
@@ -104,5 +172,4 @@ def _build_citations(chunks: list[dict], web_results: list[dict]) -> list[Citati
             evidence_grade=None,
             similarity=0.0,
         ))
-
     return citations

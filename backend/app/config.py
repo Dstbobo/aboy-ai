@@ -23,9 +23,13 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""  # voice transcription + vision
     gemini_model: str = "gemini-2.5-flash"
 
-    # LLM config
-    anthropic_model: str = "claude-sonnet-4-6"
+    # LLM config — model tiering
+    anthropic_model: str = "claude-sonnet-4-6"          # detailed / complex
+    anthropic_haiku_model: str = "claude-haiku-4-5-20251001"  # fast / simple
     max_tokens: int = 2048
+
+    # Redis (cache + rate limiting)
+    redis_url: str = ""
 
     # RAG config
     similarity_threshold: float = 0.65

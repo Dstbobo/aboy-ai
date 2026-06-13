@@ -114,6 +114,9 @@
     "owner": "aboyai",
     "updates": {
       "url": "https://u.expo.dev/72f9ee22-4dfa-47ab-b2d4-249349f4cd91"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
     }
   }
 }
