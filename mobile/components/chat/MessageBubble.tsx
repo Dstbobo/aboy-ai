@@ -9,6 +9,7 @@ import { useChatStore } from '@/stores/chat.store';
 import { rateAnswer } from '@/services/usage.service';
 import { CitationCard } from './CitationCard';
 import { StreamingText } from './StreamingText';
+import { MedicalImageCard } from './MedicalImageCard';
 import { EmergencyBanner } from './EmergencyBanner';
 import { COLORS } from '@/constants/theme';
 
@@ -75,6 +76,7 @@ export function MessageBubble({ message, onRefresh }: Props) {
     <View style={styles.aiContainer}>
       {message.emergency_triggered && <EmergencyBanner />}
       <StreamingText content={message.content} isStreaming={message.isStreaming} />
+      {message.image && <MedicalImageCard image={message.image} />}
       {message.citations.length > 0 && <CitationCard citations={message.citations} />}
 
       {!message.isStreaming && message.content.length > 0 && (

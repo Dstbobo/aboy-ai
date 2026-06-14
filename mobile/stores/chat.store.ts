@@ -11,6 +11,13 @@ export interface Citation {
   similarity: number;
 }
 
+export interface MedicalImage {
+  url: string;
+  title: string;
+  source: string;
+  page_url?: string;
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant';
@@ -19,6 +26,7 @@ export interface Message {
   emergency_triggered: boolean;
   timestamp: Date;
   isStreaming?: boolean;
+  image?: MedicalImage | null;
 }
 
 export interface LoadedMessage {
@@ -37,6 +45,7 @@ interface ChatState {
   startStreaming: (id: string) => void;
   appendStream: (chunk: string) => void;
   finaliseStream: (id: string, citations: Citation[], emergency: boolean) => void;
+  setMessageImage: (id: string, image: MedicalImage) => void;
   setSession: (sessionId: string) => void;
   setLoading: (loading: boolean) => void;
   /** Replace the conversation with one loaded from Supabase history. */
@@ -97,6 +106,15 @@ export const useChatStore = create<ChatState>()(
           ),
           isLoading: false,
           streamingContent: '',
+        }));
+      },
+
+      setMessageImage: (id, image) => {
+        set((s) => ({
+          messages: s.messages.map((m) =>
+            // Attach to the target id, or fall back to the live streaming message.
+            m.id === id || m.isStreaming ? { ...m, image } : m,
+          ),
         }));
       },
 

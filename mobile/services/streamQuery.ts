@@ -1,6 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 import { supabase } from './auth.service';
-import type { Citation } from '@/stores/chat.store';
+import type { Citation, MedicalImage } from '@/stores/chat.store';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -8,6 +8,7 @@ export interface StreamHandlers {
   onStart?: (sessionId: string, tier: number) => void;
   onToken: (text: string) => void;
   onMeta?: (citations: Citation[], emergency: boolean, sessionId: string) => void;
+  onImage?: (image: MedicalImage) => void;
   onDone: () => void;
   onError: (e: any) => void;
 }
@@ -57,6 +58,7 @@ export async function streamQuery(
         const msg = JSON.parse(payload);
         if (msg.type === 'start') h.onStart?.(msg.session_id, msg.tier);
         else if (msg.type === 'text') h.onToken(msg.content);
+        else if (msg.type === 'image') h.onImage?.(msg.image as MedicalImage);
         else if (msg.type === 'meta') h.onMeta?.(msg.citations ?? [], !!msg.emergency_triggered, msg.session_id);
       } catch {
         // ignore malformed partial

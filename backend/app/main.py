@@ -159,6 +159,11 @@ def create_app() -> FastAPI:
 
         return {"status": "ok", "tables_created": tables, "table_count": len(tables)}
 
+    @app.get("/api/v1/_imgdiag")
+    async def _imgdiag(q: str = "human heart anatomy diagram"):
+        from app.core.media.image_search import diagnose, find_medical_image
+        return {"diag": await diagnose(q), "result": await find_medical_image(q, "student_med")}
+
     app.include_router(auth.router, prefix="/api/v1", tags=["auth"])
     app.include_router(query.router, prefix="/api/v1", tags=["query"])
     app.include_router(transcribe.router, prefix="/api/v1", tags=["transcribe"])

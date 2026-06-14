@@ -124,6 +124,24 @@ def _clean(text: str, limit: int = 90) -> str:
     return text[:limit].rstrip(" .,") if text else ""
 
 
+async def diagnose(query: str) -> dict:
+    """Diagnostic: returns raw status/error so we can see why a lookup fails."""
+    out: dict = {"query": query}
+    params = {
+        "action": "query", "format": "json", "generator": "search",
+        "gsrsearch": f"{query} filetype:bitmap", "gsrnamespace": "6",
+        "gsrlimit": "3", "prop": "imageinfo", "iiprop": "url|mime", "iiurlwidth": "900",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT, headers={"User-Agent": _UA}) as client:
+            resp = await client.get(_COMMONS, params=params)
+        out["status"] = resp.status_code
+        out["body_head"] = resp.text[:300]
+    except Exception as exc:
+        out["error"] = f"{type(exc).__name__}: {exc}"
+    return out
+
+
 async def _commons_search(query: str) -> dict | None:
     params = {
         "action": "query",

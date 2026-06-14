@@ -86,6 +86,7 @@ export default function ChatScreen() {
     startStreaming,
     appendStream,
     finaliseStream,
+    setMessageImage,
   } = useChatStore();
   const stopStreamRef = useRef<(() => void) | null>(null);
   const { isOffline, enqueueQuery } = useOfflineStore();
@@ -167,6 +168,9 @@ export default function ChatScreen() {
             startStreaming(aiId); // first token → swap the thinking dots for the bubble
           }
           appendStream(chunk);
+        },
+        onImage: (image) => {
+          setMessageImage(aiId, image);
         },
         onMeta: (citations, emergency) => {
           finaliseStream(aiId, citations as any, emergency);

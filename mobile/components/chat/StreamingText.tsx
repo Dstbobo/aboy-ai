@@ -22,27 +22,29 @@ const DRUGS = [
 ];
 const DRUG_RE = new RegExp(`\\b(${DRUGS.join('|')})\\b`, 'gi');
 
+// Known programming languages → rendered as dark code panels. Anything else
+// containing arrows/box-drawing is treated as an ASCII diagram.
+const CODE_LANGS = /^(py|python|js|javascript|ts|typescript|sql|json|bash|sh|java|c|cpp|go|rust|kotlin|swift|html|css|xml|yaml)$/i;
+const DIAGRAM_RE = /[→↓←↑⟶▶│┌┐└┘├┤▼►─━┃]|->|=>|\|/;
+
+function isDiagram(lang: string, body: string): boolean {
+  return DIAGRAM_RE.test(body) && !CODE_LANGS.test((lang || '').trim());
+}
+
 /**
- * Models sometimes wrap an answer (or a diagram) in a ``` fence. Code fences
- * render as raw monospace — fine for real code, wrong for diagrams/prose.
- * Unwrap a single outer fence, and convert "diagram" fences (arrows, no real
- * code) into plain text so flow charts read cleanly.
+ * Models sometimes wrap an entire answer in a ``` fence — unwrap that single
+ * outer fence so prose renders normally. Real code and ASCII diagrams keep
+ * their fences; the custom `fence` rule styles each appropriately (dark panel
+ * for code, clean light textbook block for diagrams).
  */
 function normalizeMarkdown(md: string): string {
   let out = md.replace(/\\n/g, '\n').trim();
 
-  // Whole-answer fence unwrap (except svg, which we render as a vector).
+  // Whole-answer fence unwrap (except svg, code, or a diagram — those stay).
   const whole = out.match(/^```([a-zA-Z]*)\n([\s\S]*?)\n?```$/);
-  if (whole && whole[1] !== 'svg') out = whole[2];
-
-  // Convert diagram-ish fenced blocks to plain text. A block is a "diagram"
-  // when it has arrows/box-drawing and is NOT a known programming language.
-  const CODE_LANGS = /^(py|python|js|javascript|ts|typescript|sql|json|bash|sh|java|c|cpp|go|rust|kotlin|swift|html|css|xml|yaml)$/i;
-  out = out.replace(/```([a-zA-Z]*)\n([\s\S]*?)```/g, (m, lang, body) => {
-    if (lang === 'svg') return m;
-    const looksDiagram = /[→↓←↑⟶▶│┌┐└┘├┤▼►|]|->|=>/.test(body) && !CODE_LANGS.test(lang || '');
-    return looksDiagram ? `\n${body.trim()}\n` : m;
-  });
+  if (whole && whole[1] !== 'svg' && !CODE_LANGS.test(whole[1]) && !isDiagram(whole[1], whole[2])) {
+    out = whole[2];
+  }
 
   return out;
 }
@@ -109,6 +111,10 @@ const rules = {
     if (last < content.length) parts.push(content.slice(last));
     return <Text key={node.key} style={st.text}>{parts}</Text>;
   },
+  // Fenced blocks: dark panel for real code, clean light textbook block for
+  // ASCII diagrams (dark text on white, monospace kept for alignment).
+  fence: (node: any) => renderBlock(node),
+  code_block: (node: any) => renderBlock(node),
   // Alternating row background on table bodies.
   tbody: (node: any, children: any[]) =>
     React.createElement(
@@ -120,8 +126,28 @@ const rules = {
     ),
 };
 
+function renderBlock(node: any) {
+  const lang: string = node.sourceInfo ?? '';
+  const body: string = (node.content ?? '').replace(/\n$/, '');
+  const diagram = isDiagram(lang, body);
+  return (
+    <View key={node.key} style={diagram ? styles.diagramBox : styles.codeBox}>
+      <Text style={diagram ? styles.diagramText : styles.codeText}>{body}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   cursor: { width: 8, height: 16, backgroundColor: COLORS.primary, borderRadius: 1, marginTop: 2 },
+  // Light, textbook-style ASCII diagram: white card, dark text, monospace.
+  diagramBox: {
+    backgroundColor: '#ffffff', borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: 8, padding: 12, marginVertical: 8,
+  },
+  diagramText: { color: COLORS.text, fontFamily: 'monospace', fontSize: 12.5, lineHeight: 18 },
+  // Real code: dark terminal panel.
+  codeBox: { backgroundColor: '#0f172a', borderRadius: 8, padding: 12, marginVertical: 8 },
+  codeText: { color: '#e2e8f0', fontFamily: 'monospace', fontSize: 12.5, lineHeight: 18 },
   svgWrap: { marginVertical: 10, alignItems: 'center' },
   drug: { color: COLORS.primaryDark, fontWeight: '700' },
   rowEven: { backgroundColor: '#ffffff' },
