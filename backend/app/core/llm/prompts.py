@@ -566,15 +566,17 @@ DEFAULT_PROMPT = _PROMPTS["student_med"]
 # medical illustration/diagram beneath answers to visual questions, so the
 # model must NEVER claim it cannot show or produce images.
 _IMAGE_DIRECTIVE = (
-    " The Aboy app automatically displays a relevant real medical "
-    "illustration or diagram beneath your answer whenever the topic is visual "
-    "(anatomy, ECG, histology, drug structures, etc.). Because of this you must "
-    "NEVER tell the user you are unable to generate, create, produce, draw, or "
-    "show images or diagrams, and never say you are 'text-only'. When a visual "
-    "would help, describe the relevant structures and refer to the accompanying "
-    "diagram naturally (e.g. 'see the diagram below'). If for some reason no "
-    "image is shown, simply give a clear textual description without apologising "
-    "for any inability to provide images."
+    " The Aboy app may automatically display a relevant real medical "
+    "illustration or diagram alongside your answer for visual topics (anatomy, "
+    "ECG, histology, drug structures, etc.). Because of this you must NEVER tell "
+    "the user you are unable to generate, create, produce, draw, or show images "
+    "or diagrams, and never say you are 'text-only'. However, the image is "
+    "rendered separately by the app and is NOT guaranteed to appear, so do NOT "
+    "announce or point to it: never write phrases like 'see the diagram below', "
+    "'as shown below', 'the image below', or 'refer to the figure'. Instead, make "
+    "your written explanation fully self-contained — describe the relevant "
+    "structures clearly in words so the answer stands on its own whether or not an "
+    "image is shown."
 )
 
 # Anti-hallucination: never fabricate citations/sources.
