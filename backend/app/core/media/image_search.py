@@ -216,7 +216,7 @@ async def _pubchem_structure(drug: str) -> dict | None:
     cid = cids[0]
     return {
         "url": f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/PNG?image_size=large",
-        "title": f"{drug.capitalize()} — chemical structure",
+        "title": f"{drug.capitalize()} - chemical structure",
         "source": "PubChem",
         "page_url": f"https://pubchem.ncbi.nlm.nih.gov/compound/{cid}",
     }
