@@ -13,6 +13,18 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { MedicalImage } from '@/stores/chat.store';
 import { COLORS } from '@/constants/theme';
 
+const API_URL = process.env.EXPO_PUBLIC_API_URL ?? '';
+
+// Load images through our backend proxy. The native image loader sends a
+// generic User-Agent that Wikimedia/PubChem reject (403/429) for hotlinking,
+// so direct URLs silently failed to render; the proxy fetches with a proper
+// User-Agent from a host we control.
+function proxied(url: string): string {
+  if (!url) return url;
+  if (!API_URL) return url;
+  return `${API_URL}/api/v1/img?u=${encodeURIComponent(url)}`;
+}
+
 /**
  * A verified medical illustration shown below an AI answer. Full-width with
  * rounded corners, a loading skeleton while it loads, a source/title caption,
@@ -22,9 +34,21 @@ export function MedicalImageCard({ image }: { image: MedicalImage }) {
   const { width } = useWindowDimensions();
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [useProxy, setUseProxy] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
 
   if (failed) return null; // never show a broken image
+
+  // Try the backend proxy first; if that fails, fall back to the direct URL.
+  const uri = useProxy ? proxied(image.url) : image.url;
+  const onImgError = () => {
+    if (useProxy) {
+      setUseProxy(false); // retry with the original URL
+      setLoaded(false);
+    } else {
+      setFailed(true);
+    }
+  };
 
   const cardWidth = width - 32;
 
@@ -38,11 +62,11 @@ export function MedicalImageCard({ image }: { image: MedicalImage }) {
             </View>
           )}
           <Image
-            source={{ uri: image.url }}
+            source={{ uri }}
             style={styles.image}
             resizeMode="cover"
             onLoad={() => setLoaded(true)}
-            onError={() => setFailed(true)}
+            onError={onImgError}
           />
           {loaded && (
             <View style={styles.expandBadge}>
@@ -64,7 +88,7 @@ export function MedicalImageCard({ image }: { image: MedicalImage }) {
           <TouchableOpacity style={styles.fsClose} onPress={() => setFullscreen(false)} hitSlop={10}>
             <MaterialCommunityIcons name="close" size={28} color="#fff" />
           </TouchableOpacity>
-          <Image source={{ uri: image.url }} style={styles.fsImage} resizeMode="contain" />
+          <Image source={{ uri }} style={styles.fsImage} resizeMode="contain" />
           <Text style={styles.fsCaption} numberOfLines={3}>
             {image.source}
             {image.title ? ` · ${image.title}` : ''}
