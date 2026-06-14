@@ -18,6 +18,7 @@ import * as NavigationBar from 'expo-navigation-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { MessageBubble } from '@/components/chat/MessageBubble';
+import { WelcomeHome } from '@/components/chat/WelcomeHome';
 import { OfflineBanner } from '@/components/shared/OfflineBanner';
 import { ThinkingDots } from '@/components/chat/ThinkingDots';
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from 'expo-speech-recognition';
@@ -148,10 +149,13 @@ export default function ChatScreen() {
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 60);
 
     // One continuous thread: include recent turns (typed AND voice).
+    // Trim each turn so a long prior answer can't blow the request size /
+    // server validation (BUG 1: 2nd question used to fail). Recent context is
+    // enough for follow-ups; the backend also trims further.
     const history = useChatStore
       .getState()
       .messages.slice(-10)
-      .map((m) => ({ role: m.role, content: m.content }));
+      .map((m) => ({ role: m.role, content: (m.content || '').slice(0, 4000) }));
 
     const aiId = 'ai' + Date.now();
     let started = false;
@@ -375,23 +379,8 @@ export default function ChatScreen() {
             <OfflineBanner />
 
             {!hasChat ? (
-              <View style={styles.emptyState}>
-                <View style={styles.emptyLogo}>
-                  <Text style={styles.emptyLogoLetter}>A</Text>
-                </View>
-                <Text style={styles.emptyTitle}>
-                  {firstName ? `Hello, ${firstName}` : 'How can I help?'}
-                </Text>
-                <Text style={styles.emptySubtitle}>
-                  Ask any healthcare or study question.{'\n'}Every answer is cited from verified sources.
-                </Text>
-                <View style={styles.chipsWrap}>
-                  {startersForRole(user?.role ?? '').map((s) => (
-                    <TouchableOpacity key={s} style={styles.chip} onPress={() => sendMessage(s)}>
-                      <Text style={styles.chipText}>{s}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
+              <View style={[styles.flex, { paddingTop: insets.top + HEADER_HEIGHT }]}>
+                <WelcomeHome onPick={(prompt) => sendMessage(prompt)} />
               </View>
             ) : (
               <FlatList

@@ -16,7 +16,19 @@ export interface StreamHandlers {
 async function authToken(): Promise<string | null> {
   try {
     const { data } = await supabase.auth.getSession();
-    if (data.session?.access_token) return data.session.access_token;
+    const session = data.session;
+    if (session?.access_token) {
+      // Silently refresh if the token is expired or within 60s of expiring,
+      // so a stream opened after inactivity never starts with a stale token.
+      const expSoon = !session.expires_at || session.expires_at * 1000 - Date.now() < 60_000;
+      if (expSoon) {
+        try {
+          const { data: r } = await supabase.auth.refreshSession();
+          if (r.session?.access_token) return r.session.access_token;
+        } catch {}
+      }
+      return session.access_token;
+    }
   } catch {}
   return SecureStore.getItemAsync('aboy_auth_token');
 }

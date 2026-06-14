@@ -86,8 +86,12 @@ async def update_profile_after_query(user_id: str, role: str, session_id: str, q
 
         followup = is_followup(query, prev_topics, cur_topics)
 
+        # A clarification ("explain that again") often has no topic keyword of
+        # its own — attribute the struggle to the previous question's topic.
+        topics_to_bump = cur_topics or (prev_topics if followup else [])
+
         # Tally each topic atomically.
-        for topic in cur_topics:
+        for topic in topics_to_bump:
             try:
                 await db.rpc("bump_topic_stat", {"p_user": user_id, "p_topic": topic, "p_is_followup": followup}).execute()
             except Exception as exc:
