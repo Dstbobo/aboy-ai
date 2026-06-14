@@ -155,6 +155,41 @@ def detect_visual_query(question: str, role: str) -> str | None:
 
 _HTML_TAG = re.compile(r"<[^>]+>")
 
+# Wikimedia hosts the same diagram translated into many languages as separate
+# files, often suffixed with a language code (e.g. "Physiology of Nephron ku").
+# We must always prefer the English version, never a foreign-labelled one.
+_FOREIGN_LANG_CODES = {
+    "ar", "az", "fa", "ku", "ru", "tr", "fr", "de", "es", "it", "pt", "zh",
+    "ja", "ko", "hi", "ur", "bn", "id", "pl", "nl", "sv", "fi", "cs", "ro",
+    "hu", "el", "he", "th", "vi", "uk", "sr", "hr", "bg", "sk", "sl", "lt",
+    "lv", "et", "ka", "hy", "ms", "ta", "te", "ml", "kn", "mr", "gu", "pa",
+    "ne", "si", "my", "km", "lo", "mn", "kk", "uz", "be", "mk", "sq", "bs",
+    "ca", "gl", "eu", "af", "sw", "am", "ha", "yo", "ig", "zu", "tl", "ckb",
+    # ISO 639-2 (3-letter) variants seen on Commons filenames.
+    "rus", "ara", "fas", "kur", "tur", "fra", "deu", "ger", "spa", "ita",
+    "por", "zho", "chi", "jpn", "kor", "hin", "urd", "ben", "ind", "pol",
+    "nld", "dut", "swe", "fin", "ces", "cze", "ron", "rum", "hun", "ell",
+    "gre", "heb", "tha", "vie", "ukr", "srp", "hrv", "bul", "slk", "slo",
+    "slv", "lit", "lav", "est", "kat", "geo", "hye", "arm", "msa", "may",
+    "tam", "tel", "mal", "kan", "mar", "guj", "pan", "nep", "sin", "mya",
+    "khm", "lao", "mon", "kaz", "uzb", "bel", "mkd", "sqi", "alb", "bos",
+    "cat", "glg", "eus", "baq", "afr", "swa", "amh", "hau", "yor", "ibo",
+    "zul", "tgl", "fil",
+}
+_EN_MARKER = re.compile(r"(?:[ _\-(](?:en|eng|english)\b|\benglish\b)", re.IGNORECASE)
+_TRAILING_LANG = re.compile(r"[ _\-]([a-z]{2,4})$", re.IGNORECASE)
+
+
+def _english_score(title_base: str) -> int:
+    """Higher = more likely English. Penalise foreign-language file variants."""
+    t = (title_base or "").strip()
+    if _EN_MARKER.search(t):
+        return 2
+    m = _TRAILING_LANG.search(t)
+    if m and m.group(1).lower() in _FOREIGN_LANG_CODES:
+        return -3
+    return 0
+
 
 def _clean(text: str, limit: int = 90) -> str:
     text = _HTML_TAG.sub("", text or "").strip()
@@ -179,29 +214,33 @@ async def _commons_search(query: str) -> dict | None:
     if resp.status_code != 200:
         return None
     pages = (resp.json().get("query") or {}).get("pages") or {}
-    # Search results carry an "index" — honour it so the best match ranks first.
-    ordered = sorted(pages.values(), key=lambda p: p.get("index", 999))
-    for page in ordered:
+    candidates = []
+    for page in pages.values():
         info = (page.get("imageinfo") or [{}])[0]
-        mime = info.get("mime", "")
-        if mime not in ("image/jpeg", "image/png"):
+        if info.get("mime", "") not in ("image/jpeg", "image/png"):
             continue
         thumb = info.get("thumburl")
         if not thumb:
             continue
+        file_base = page.get("title", "").removeprefix("File:").rsplit(".", 1)[0]
         meta = info.get("extmetadata") or {}
         title = (
             _clean(meta.get("ObjectName", {}).get("value", ""))
             or _clean(meta.get("ImageDescription", {}).get("value", ""))
-            or _clean(page.get("title", "").removeprefix("File:").rsplit(".", 1)[0])
+            or _clean(file_base)
         )
-        return {
-            "url": thumb,
-            "title": title or "Medical illustration",
-            "source": "Wikimedia Commons",
-            "page_url": info.get("descriptionurl") or "",
-        }
-    return None
+        # Prefer English: score the filename AND the human title.
+        en = _english_score(file_base) + _english_score(title)
+        candidates.append((
+            en, -page.get("index", 999),  # English first, then search rank
+            {"url": thumb, "title": title or "Medical illustration",
+             "source": "Wikimedia Commons", "page_url": info.get("descriptionurl") or ""},
+        ))
+    if not candidates:
+        return None
+    # Highest English score, then best (lowest) search index.
+    candidates.sort(key=lambda c: (c[0], c[1]), reverse=True)
+    return candidates[0][2]
 
 
 async def _pubchem_structure(drug: str) -> dict | None:

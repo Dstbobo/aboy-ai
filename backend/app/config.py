@@ -32,7 +32,10 @@ class Settings(BaseSettings):
     redis_url: str = ""
 
     # RAG config
-    similarity_threshold: float = 0.65
+    # Voyage query/document cosine scores for relevant chunks land ~0.5-0.65,
+    # noise ~0.25-0.35. 0.65 filtered out even exact-topic matches (giving empty
+    # citations); 0.40 keeps relevant chunks while still excluding noise.
+    similarity_threshold: float = 0.40
     retrieval_top_k: int = 10
     rerank_top_k: int = 5
     voyage_model: str = "voyage-3"
