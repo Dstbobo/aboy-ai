@@ -33,7 +33,8 @@ _TIMEOUT = 5.0
 # so we don't hammer the upstream APIs for concepts that have no image.
 _TTL_HIT = 30 * 24 * 60 * 60
 _TTL_MISS = 24 * 60 * 60
-_CACHE_VERSION = "v1"
+# Bump to invalidate stale Redis image entries (e.g. old non-English variants).
+_CACHE_VERSION = "v2"
 
 # ── Visual-concept detection ───────────────────────────────────────────────
 # Each entry: a trigger (matched as a whole word, case-insensitive) → the search
