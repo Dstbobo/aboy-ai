@@ -6,6 +6,7 @@ from app.config import get_settings
 from app.core.audit.logger import log_query
 from app.core.audit.models import AuditEvent
 from app.core.cache import cache_get, cache_set, query_hash, TTL_RESPONSE
+from app.core.token_budget import LIMIT_MESSAGE, add_usage, is_exhausted
 from app.core.llm.client import generate_response
 from app.core.llm.prompts import build_user_prompt, get_system_prompt
 from app.core.llm.safety import is_safe_output
@@ -44,6 +45,14 @@ async def run_rag_pipeline(
     start = time.monotonic()
     settings = get_settings()
     emergency_triggered = check_emergency(request.query)
+
+    # ── Daily token budget (beta) ──
+    if await is_exhausted(user.user_id):
+        return QueryResponse(
+            answer=LIMIT_MESSAGE, citations=[], session_id=session_id,
+            emergency_triggered=False, model_used="none",
+            latency_ms=int((time.monotonic() - start) * 1000),
+        )
 
     cls = classify(request.query)
 
@@ -94,17 +103,12 @@ async def run_rag_pipeline(
         )
     user_prompt = build_user_prompt(request.query, context, request.history)
 
-    # Cap output length per tier — short replies generate much faster.
-    if cls.tier == TIER_CONVERSATIONAL:
-        max_tokens = 300
-    elif cls.tier == TIER_STATIC and not cls.detailed:
-        max_tokens = 700
-    else:
-        max_tokens = 1200
-
+    # Never truncate — let Claude finish the full answer (8192 cap is a safety net).
     answer, tokens_in, tokens_out = await generate_response(
-        system_prompt, user_prompt, model=model, max_tokens=max_tokens
+        system_prompt, user_prompt, model=model, max_tokens=8192
     )
+    # Record actual usage against the daily budget (background).
+    asyncio.create_task(add_usage(user.user_id, (tokens_in or 0) + (tokens_out or 0)))
 
     if not is_safe_output(answer):
         answer = "I'm unable to provide a response to this query. Please consult a qualified healthcare professional."

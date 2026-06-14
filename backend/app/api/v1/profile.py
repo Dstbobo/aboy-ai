@@ -2,10 +2,17 @@ from pydantic import BaseModel
 from fastapi import APIRouter, Depends
 
 from app.core.auth.middleware import get_current_user
+from app.core.token_budget import get_usage
 from app.db.supabase import get_db
 from app.models.user import AuthenticatedUser
 
 router = APIRouter()
+
+
+@router.get("/usage")
+async def usage(user: AuthenticatedUser = Depends(get_current_user)) -> dict:
+    """Daily token budget status for the Settings 'Usage' section."""
+    return await get_usage(user.user_id)
 
 
 class ProfileUpdate(BaseModel):

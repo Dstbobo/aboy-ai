@@ -35,9 +35,10 @@ async def generate_response(
 
 
 async def stream_response(
-    system_prompt: str, user_prompt: str, model: str | None = None, max_tokens: int | None = None
+    system_prompt: str, user_prompt: str, model: str | None = None,
+    max_tokens: int | None = None, usage_out: dict | None = None,
 ):
-    """Yields text chunks for SSE streaming."""
+    """Yields text chunks for SSE streaming. Fills usage_out with token counts."""
     settings = get_settings()
     client = _get_anthropic_client()
 
@@ -49,3 +50,10 @@ async def stream_response(
     ) as stream:
         async for text in stream.text_stream:
             yield text
+        if usage_out is not None:
+            try:
+                final = await stream.get_final_message()
+                usage_out["input"] = final.usage.input_tokens
+                usage_out["output"] = final.usage.output_tokens
+            except Exception:
+                pass

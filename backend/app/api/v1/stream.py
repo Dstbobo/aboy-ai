@@ -20,6 +20,7 @@ from app.core.rag.reranker import rerank_chunks
 from app.core.rag.retriever import retrieve_chunks
 from app.core.rag.web_search import web_search
 from app.config import get_settings
+from app.core.token_budget import LIMIT_MESSAGE, add_usage, is_exhausted
 from app.models.query import QueryRequest
 from app.models.user import AuthenticatedUser
 from app.utils.emergency import check_emergency
@@ -49,6 +50,13 @@ async def _event_generator(
     # Tell the client the session id immediately.
     yield f"data: {json.dumps({'type': 'start', 'session_id': session_id, 'tier': cls.tier})}\n\n"
 
+    # ── Daily token budget (beta) ──
+    if await is_exhausted(user.user_id):
+        yield f"data: {json.dumps({'type': 'text', 'content': LIMIT_MESSAGE})}\n\n"
+        yield f"data: {json.dumps({'type': 'meta', 'citations': [], 'emergency_triggered': False, 'session_id': session_id})}\n\n"
+        yield "data: [DONE]\n\n"
+        return
+
     # ── Tier-aware retrieval (Tier 1 skips it entirely for a fast first token) ──
     reranked: list[dict] = []
     web_results: list[dict] = []
@@ -64,11 +72,12 @@ async def _event_generator(
     # ── Model + length tiering ──
     haiku, sonnet = settings.anthropic_haiku_model, settings.anthropic_model
     if cls.tier == TIER_CONVERSATIONAL:
-        model, max_tokens = haiku, 300
+        model = haiku
     elif cls.tier == TIER_STATIC and not cls.detailed:
-        model, max_tokens = haiku, 700
+        model = haiku
     else:
-        model, max_tokens = sonnet, 1200
+        model = sonnet
+    max_tokens = 8192  # never truncate — full answers with conclusions
 
     context = build_context(reranked, web_results) if (reranked or web_results) else ""
     system_prompt = get_system_prompt(user.role, getattr(user, "sub_role", None))
@@ -77,11 +86,17 @@ async def _event_generator(
     user_prompt = build_user_prompt(request.query, context, request.history)
 
     full_text = ""
-    async for chunk in stream_response(system_prompt, user_prompt, model=model, max_tokens=max_tokens):
+    usage: dict = {}
+    async for chunk in stream_response(system_prompt, user_prompt, model=model, max_tokens=max_tokens, usage_out=usage):
         if first_token_at is None:
             first_token_at = time.monotonic()
         full_text += chunk
         yield f"data: {json.dumps({'type': 'text', 'content': chunk})}\n\n"
+
+    # Record actual token usage against the daily budget (background).
+    total_tokens = (usage.get("input", 0) or 0) + (usage.get("output", 0) or 0)
+    if total_tokens:
+        asyncio.create_task(add_usage(user.user_id, total_tokens))
 
     citations = _build_citations(reranked, web_results)
     yield f"data: {json.dumps({'type': 'meta', 'citations': [c.model_dump() for c in citations], 'emergency_triggered': emergency_triggered, 'session_id': session_id})}\n\n"
