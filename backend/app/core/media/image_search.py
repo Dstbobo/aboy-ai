@@ -33,8 +33,8 @@ _TIMEOUT = 5.0
 # so we don't hammer the upstream APIs for concepts that have no image.
 _TTL_HIT = 30 * 24 * 60 * 60
 _TTL_MISS = 24 * 60 * 60
-# Bump to invalidate stale Redis image entries (e.g. old non-English variants).
-_CACHE_VERSION = "v2"
+# Bump to invalidate stale Redis image entries (non-English / low-res variants).
+_CACHE_VERSION = "v3"
 
 # ── Visual-concept detection ───────────────────────────────────────────────
 # Each entry: a trigger (matched as a whole word, case-insensitive) → the search
@@ -225,7 +225,8 @@ async def _commons_search(query: str) -> dict | None:
         "gsrlimit": "8",
         "prop": "imageinfo",
         "iiprop": "url|mime|extmetadata",
-        "iiurlwidth": "900",
+        # 1600px so anatomical labels are sharp and readable (900 was blurry).
+        "iiurlwidth": "1600",
     }
     async with httpx.AsyncClient(timeout=_TIMEOUT, headers={"User-Agent": _UA}) as client:
         resp = await client.get(_COMMONS, params=params)

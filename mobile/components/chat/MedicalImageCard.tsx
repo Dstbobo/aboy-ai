@@ -83,7 +83,8 @@ export function MedicalImageCard({ image }: { image: MedicalImage }) {
             key={uri}
             source={{ uri }}
             style={[styles.image, !loaded && styles.hidden]}
-            resizeMode="cover"
+            // 'contain' so labelled diagrams are never cropped at the edges.
+            resizeMode="contain"
             onLoad={onLoad}
             onError={onError}
           />
@@ -108,7 +109,7 @@ export function MedicalImageCard({ image }: { image: MedicalImage }) {
       <Modal visible={fullscreen} transparent animationType="fade" onRequestClose={() => setFullscreen(false)}>
         <View style={styles.fsBackdrop}>
           <TouchableOpacity style={styles.fsClose} onPress={() => setFullscreen(false)} hitSlop={10}>
-            <MaterialCommunityIcons name="close" size={28} color="#fff" />
+            <MaterialCommunityIcons name="close" size={28} color={COLORS.text} />
           </TouchableOpacity>
           <Image source={{ uri }} style={styles.fsImage} resizeMode="contain" />
           <Text style={styles.fsCaption} numberOfLines={3}>
@@ -126,14 +127,16 @@ const styles = StyleSheet.create({
   imageBox: {
     borderRadius: 14,
     overflow: 'hidden',
-    backgroundColor: COLORS.secondary,
+    // White, not the tinted surface: anatomy PNGs are transparent with dark
+    // labels — a white backing keeps the labels readable.
+    backgroundColor: '#ffffff',
     aspectRatio: 4 / 3,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: COLORS.border,
   },
   image: { width: '100%', height: '100%' },
   hidden: { opacity: 0 },
-  placeholder: { ...StyleSheet.absoluteFillObject, backgroundColor: COLORS.secondary },
+  placeholder: { ...StyleSheet.absoluteFillObject, backgroundColor: '#ffffff' },
   expandBadge: {
     position: 'absolute', top: 8, right: 8,
     backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 12, padding: 5,
@@ -141,11 +144,13 @@ const styles = StyleSheet.create({
   caption: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6, paddingHorizontal: 2 },
   captionText: { flex: 1, fontSize: 12, color: COLORS.textSecondary },
   captionSource: { fontWeight: '700', color: COLORS.textSecondary },
-  fsBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.94)', alignItems: 'center', justifyContent: 'center' },
+  // White fullscreen backdrop: transparent diagrams + dark labels stay legible
+  // (a black backdrop made the labels disappear).
+  fsBackdrop: { flex: 1, backgroundColor: '#ffffff', alignItems: 'center', justifyContent: 'center' },
   fsClose: { position: 'absolute', top: 50, right: 20, zIndex: 2, padding: 6 },
   fsImage: { width: '100%', height: '80%' },
   fsCaption: {
     position: 'absolute', bottom: 40, left: 20, right: 20,
-    color: '#e2e8f0', fontSize: 13, textAlign: 'center',
+    color: COLORS.textSecondary, fontSize: 13, textAlign: 'center',
   },
 });
