@@ -7,7 +7,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.v1 import admin, audit, auth, feedback, history, knowledge, live, notifications, profile, query, stream, streak, transcribe
+from app.api.v1 import admin, audit, auth, feedback, history, intelligence, knowledge, live, notifications, profile, query, stream, streak, transcribe
 from app.config import get_settings
 
 logging.basicConfig(level=logging.INFO)
@@ -169,6 +169,7 @@ def create_app() -> FastAPI:
     app.include_router(feedback.router, prefix="/api/v1", tags=["feedback"])
     app.include_router(notifications.router, prefix="/api/v1", tags=["notifications"])
     app.include_router(profile.router, prefix="/api/v1", tags=["profile"])
+    app.include_router(intelligence.router, prefix="/api/v1", tags=["intelligence"])
     app.include_router(admin.router, prefix="/api/v1/admin", tags=["admin"])
     app.include_router(audit.router, prefix="/api/v1/admin", tags=["admin"])
     app.include_router(knowledge.router, prefix="/api/v1/admin", tags=["knowledge"])

@@ -20,6 +20,11 @@ from app.core.rag.reranker import rerank_chunks
 from app.core.rag.retriever import retrieve_chunks
 from app.core.rag.web_search import web_search
 from app.core.media.image_search import find_medical_image
+from app.core.intelligence.profile import (
+    get_raw_profile,
+    personalization_snippet,
+    update_profile_after_query,
+)
 from app.config import get_settings
 from app.core.token_budget import LIMIT_MESSAGE, add_usage, is_exhausted
 from app.models.query import QueryRequest
@@ -89,6 +94,8 @@ async def _event_generator(
 
     context = build_context(reranked, web_results) if (reranked or web_results) else ""
     system_prompt = get_system_prompt(user.role, getattr(user, "sub_role", None))
+    if cls.tier != TIER_CONVERSATIONAL:
+        system_prompt += personalization_snippet(await get_raw_profile(user.user_id))
     if cls.tier == TIER_CONVERSATIONAL:
         system_prompt += " This is a brief conversational message — reply naturally and concisely without citations."
     user_prompt = build_user_prompt(request.query, context, request.history)
@@ -139,6 +146,8 @@ async def _event_generator(
         latency_ms=latency_ms, safety_flags=[], emergency_triggered=emergency_triggered,
         flagged_for_review=False, ip_hash=ip_hash,
     )))
+    if cls.tier != TIER_CONVERSATIONAL:
+        asyncio.create_task(update_profile_after_query(user.user_id, user.role, session_id, request.query))
 
 
 @router.post("/query/stream")

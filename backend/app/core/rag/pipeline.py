@@ -11,6 +11,11 @@ from app.core.llm.client import generate_response
 from app.core.llm.prompts import build_user_prompt, get_system_prompt
 from app.core.llm.safety import is_safe_output
 from app.core.media.image_search import find_medical_image
+from app.core.intelligence.profile import (
+    get_raw_profile,
+    personalization_snippet,
+    update_profile_after_query,
+)
 from app.core.rag.classifier import (
     TIER_CONVERSATIONAL,
     TIER_DYNAMIC,
@@ -114,6 +119,9 @@ async def run_rag_pipeline(
     # ── Generate ──
     context = build_context(reranked, web_results) if (reranked or web_results) else ""
     system_prompt = get_system_prompt(user.role, getattr(user, "sub_role", None))
+    # Personalise depth based on what this learner already knows / struggles with.
+    if cls.tier != TIER_CONVERSATIONAL:
+        system_prompt += personalization_snippet(await get_raw_profile(user.user_id))
     if cls.tier == TIER_CONVERSATIONAL:
         system_prompt += (
             " This is a brief conversational message — reply naturally and concisely "
@@ -174,6 +182,8 @@ async def run_rag_pipeline(
         ip_hash=ip_hash,
     )
     asyncio.create_task(log_query(audit_event))
+    if cls.tier != TIER_CONVERSATIONAL:
+        asyncio.create_task(update_profile_after_query(user.user_id, user.role, session_id, request.query))
 
     return QueryResponse(
         answer=answer,

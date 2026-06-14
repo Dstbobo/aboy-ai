@@ -3,7 +3,10 @@ from pydantic import BaseModel, Field
 
 class HistoryTurn(BaseModel):
     role: str  # "user" | "assistant"
-    content: str = Field(..., max_length=4000)
+    # Full answers can exceed 4k chars; a too-tight cap made the *second*
+    # question in a chat fail validation (422) → "Sorry, I encountered an
+    # error." Generous cap here; the prompt builder trims per-turn anyway.
+    content: str = Field(..., max_length=20000)
 
 
 class QueryRequest(BaseModel):

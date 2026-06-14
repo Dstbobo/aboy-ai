@@ -27,7 +27,7 @@ async def rate(body: RateBody, user: AuthenticatedUser = Depends(get_current_use
     db = await get_db()
     # Find the most recent audit row for this session to anchor the feedback.
     res = (
-        await db.table("query_audit_log").select("id")
+        await db.table("query_audit_log").select("id, query_raw")
         .eq("user_id", user.user_id).eq("session_id", body.session_id)
         .order("created_at", desc=True).limit(1).execute()
     )
@@ -44,6 +44,15 @@ async def rate(body: RateBody, user: AuthenticatedUser = Depends(get_current_use
         }).execute()
     except Exception:
         return {"status": "error"}
+
+    # Feed the like/dislike into the learning profile's topic tallies.
+    try:
+        from app.core.intelligence.topics import extract_topics
+        col = "disliked" if is_down else "liked"
+        for topic in extract_topics(res.data[0].get("query_raw") or "", user.role):
+            await db.rpc("bump_topic_feedback", {"p_user": user.user_id, "p_topic": topic, "p_col": col}).execute()
+    except Exception:
+        pass
     return {"status": "submitted"}
 
 
