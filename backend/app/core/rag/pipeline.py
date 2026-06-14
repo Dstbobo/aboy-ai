@@ -10,6 +10,7 @@ from app.core.token_budget import LIMIT_MESSAGE, add_usage, is_exhausted
 from app.core.llm.client import generate_response
 from app.core.llm.prompts import build_user_prompt, get_system_prompt
 from app.core.llm.safety import is_safe_output
+from app.core.media.image_search import find_medical_image
 from app.core.rag.classifier import (
     TIER_CONVERSATIONAL,
     TIER_DYNAMIC,
@@ -21,7 +22,7 @@ from app.core.rag.embedder import embed_query
 from app.core.rag.reranker import rerank_chunks
 from app.core.rag.retriever import retrieve_chunks
 from app.core.rag.web_search import web_search
-from app.models.query import CitationModel, QueryRequest, QueryResponse
+from app.models.query import CitationModel, MedicalImage, QueryRequest, QueryResponse
 from app.models.user import AuthenticatedUser
 from app.utils.emergency import check_emergency
 
@@ -78,6 +79,13 @@ async def run_rag_pipeline(
     sonnet = settings.anthropic_model
     model = haiku if (cls.tier == TIER_CONVERSATIONAL or (cls.tier == TIER_STATIC and not cls.detailed)) else sonnet
 
+    # ── Auto medical illustration (runs in parallel with retrieval/gen) ──
+    img_task = (
+        asyncio.create_task(find_medical_image(request.query, user.role))
+        if cls.tier != TIER_CONVERSATIONAL
+        else None
+    )
+
     # ── Retrieval (tier-aware, parallel where both are needed) ──
     reranked: list[dict] = []
     web_results: list[dict] = []
@@ -114,6 +122,16 @@ async def run_rag_pipeline(
         answer = "I'm unable to provide a response to this query. Please consult a qualified healthcare professional."
 
     citations = _build_citations(reranked, web_results)
+
+    image = None
+    if img_task is not None:
+        try:
+            img = await img_task
+            if img:
+                image = MedicalImage(**img)
+        except Exception:
+            image = None
+
     latency_ms = int((time.monotonic() - start) * 1000)
     ip_hash = hashlib.sha256(client_ip.encode()).hexdigest() if client_ip else None
 
@@ -163,6 +181,7 @@ async def run_rag_pipeline(
         emergency_triggered=emergency_triggered,
         model_used=model,
         latency_ms=latency_ms,
+        image=image,
     )
 
 

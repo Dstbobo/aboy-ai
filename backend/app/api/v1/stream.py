@@ -19,6 +19,7 @@ from app.core.rag.pipeline import _build_citations
 from app.core.rag.reranker import rerank_chunks
 from app.core.rag.retriever import retrieve_chunks
 from app.core.rag.web_search import web_search
+from app.core.media.image_search import find_medical_image
 from app.config import get_settings
 from app.core.token_budget import LIMIT_MESSAGE, add_usage, is_exhausted
 from app.models.query import QueryRequest
@@ -56,6 +57,13 @@ async def _event_generator(
         yield f"data: {json.dumps({'type': 'meta', 'citations': [], 'emergency_triggered': False, 'session_id': session_id})}\n\n"
         yield "data: [DONE]\n\n"
         return
+
+    # ── Auto medical illustration: look it up in parallel; emit after text ──
+    img_task = (
+        asyncio.create_task(find_medical_image(request.query, user.role))
+        if cls.tier != TIER_CONVERSATIONAL
+        else None
+    )
 
     # ── Tier-aware retrieval (Tier 1 skips it entirely for a fast first token) ──
     reranked: list[dict] = []
@@ -97,6 +105,15 @@ async def _event_generator(
     total_tokens = (usage.get("input", 0) or 0) + (usage.get("output", 0) or 0)
     if total_tokens:
         asyncio.create_task(add_usage(user.user_id, total_tokens))
+
+    # Image arrives below the text (never blocks the stream's first token).
+    if img_task is not None:
+        try:
+            image = await img_task
+            if image:
+                yield f"data: {json.dumps({'type': 'image', 'image': image})}\n\n"
+        except Exception:
+            pass
 
     citations = _build_citations(reranked, web_results)
     yield f"data: {json.dumps({'type': 'meta', 'citations': [c.model_dump() for c in citations], 'emergency_triggered': emergency_triggered, 'session_id': session_id})}\n\n"

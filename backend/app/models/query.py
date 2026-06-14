@@ -23,6 +23,13 @@ class CitationModel(BaseModel):
     similarity: float
 
 
+class MedicalImage(BaseModel):
+    url: str
+    title: str
+    source: str
+    page_url: str = ""
+
+
 class QueryResponse(BaseModel):
     answer: str
     citations: list[CitationModel]
@@ -30,3 +37,4 @@ class QueryResponse(BaseModel):
     emergency_triggered: bool = False
     model_used: str
     latency_ms: int
+    image: MedicalImage | None = None
