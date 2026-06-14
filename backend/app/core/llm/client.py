@@ -34,14 +34,16 @@ async def generate_response(
     return text, message.usage.input_tokens, message.usage.output_tokens
 
 
-async def stream_response(system_prompt: str, user_prompt: str, model: str | None = None):
+async def stream_response(
+    system_prompt: str, user_prompt: str, model: str | None = None, max_tokens: int | None = None
+):
     """Yields text chunks for SSE streaming."""
     settings = get_settings()
     client = _get_anthropic_client()
 
     async with client.messages.stream(
         model=model or settings.anthropic_model,
-        max_tokens=settings.max_tokens,
+        max_tokens=max_tokens or settings.max_tokens,
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     ) as stream:
