@@ -34,7 +34,7 @@ _TIMEOUT = 5.0
 _TTL_HIT = 30 * 24 * 60 * 60
 _TTL_MISS = 24 * 60 * 60
 # Bump to invalidate stale Redis image entries (non-English / low-res variants).
-_CACHE_VERSION = "v3"
+_CACHE_VERSION = "v4"
 
 # ── Visual-concept detection ───────────────────────────────────────────────
 # Each entry: a trigger (matched as a whole word, case-insensitive) → the search
@@ -181,15 +181,66 @@ _EN_MARKER = re.compile(r"(?:[ _\-(](?:en|eng|english)\b|\benglish\b)", re.IGNOR
 _TRAILING_LANG = re.compile(r"[ _\-]([a-z]{2,4})$", re.IGNORECASE)
 
 
-def _english_score(title_base: str) -> int:
-    """Higher = more likely English. Penalise foreign-language file variants."""
-    t = (title_base or "").strip()
+# Relevance: the chosen image must actually depict the concept, not just be a
+# sharp image that loosely matched. Match the concept's key term(s) (with a few
+# anatomical synonyms) against the candidate filename/title.
+_STOP_WORDS = {
+    "human", "anatomy", "anatomical", "diagram", "system", "structure", "of",
+    "the", "a", "medical", "gland", "control", "physiology", "labeled",
+    "labelled", "drawing", "illustration", "and",
+}
+_SYNONYMS = {
+    "kidney": ["kidney", "renal", "nephron"], "nephron": ["nephron", "kidney", "renal"],
+    "heart": ["heart", "cardiac"], "cardiac": ["cardiac", "heart"],
+    "brain": ["brain", "cerebral", "cerebrum"], "liver": ["liver", "hepatic"],
+    "lung": ["lung", "lungs", "pulmonary", "respiratory"], "lungs": ["lung", "lungs", "pulmonary", "respiratory"],
+    "respiratory": ["respiratory", "lung", "lungs", "pulmonary"],
+    "bone": ["bone", "skeleton", "skeletal"], "skeleton": ["skeleton", "skeletal", "bone"],
+    "stomach": ["stomach", "gastric"], "eye": ["eye", "ocular", "retina"],
+    "ear": ["ear", "cochlea", "auditory"], "spinal": ["spinal", "spine", "vertebr"],
+    "skin": ["skin", "dermis", "epidermis", "integument"], "thyroid": ["thyroid"],
+    "pancreas": ["pancreas", "pancreatic"], "spleen": ["spleen", "splenic"],
+    "intestine": ["intestine", "intestinal", "bowel", "colon"], "muscle": ["muscle", "muscular"],
+    "neuron": ["neuron", "nerve", "neural"], "alveoli": ["alveoli", "alveolar", "lung"],
+}
+
+
+def _key_terms(query: str) -> set[str]:
+    terms: set[str] = set()
+    for w in re.findall(r"[a-z]+", query.lower()):
+        if len(w) > 2 and w not in _STOP_WORDS:
+            terms.add(w)
+            terms.update(_SYNONYMS.get(w, []))
+    return terms
+
+
+def _has_term(text: str, terms: set[str]) -> bool:
+    if not terms:
+        return True
+    low = (text or "").lower()
+    return any(t in low for t in terms)
+
+
+def _lang_signal(text: str) -> str:
+    """'en' (explicit English marker), 'foreign' (foreign lang code), or 'neutral'."""
+    t = (text or "").strip()
     if _EN_MARKER.search(t):
-        return 2
+        return "en"
     m = _TRAILING_LANG.search(t)
     if m and m.group(1).lower() in _FOREIGN_LANG_CODES:
-        return -3
-    return 0
+        return "foreign"
+    return "neutral"
+
+
+def _english_flags(file_base: str, title: str) -> tuple[int, int]:
+    """Returns (not_foreign, en_bonus). not_foreign=0 only when a foreign-language
+    marker is present and no English marker is — those are pushed to the bottom.
+    en_bonus is a mild tiebreak; neutral (most English diagrams) is treated the
+    same as explicit-English so it never loses to a low-res '-en' variant."""
+    sigs = {_lang_signal(file_base), _lang_signal(title)}
+    has_en = "en" in sigs
+    is_foreign = ("foreign" in sigs) and not has_en
+    return (0 if is_foreign else 1, 1 if has_en else 0)
 
 
 def _clean(text: str, limit: int = 90) -> str:
@@ -220,11 +271,13 @@ async def _commons_search(query: str) -> dict | None:
         "action": "query",
         "format": "json",
         "generator": "search",
-        "gsrsearch": f"{query} filetype:bitmap",
+        # Include SVG ('drawing') as well as bitmap: Wikimedia renders SVGs to a
+        # crisp PNG at our requested width, so labelled diagrams stay sharp.
+        "gsrsearch": query,
         "gsrnamespace": "6",  # File:
         "gsrlimit": "8",
         "prop": "imageinfo",
-        "iiprop": "url|mime|extmetadata",
+        "iiprop": "url|mime|size|extmetadata",  # size → original width/height
         # 1600px so anatomical labels are sharp and readable (900 was blurry).
         "iiurlwidth": "1600",
     }
@@ -233,11 +286,14 @@ async def _commons_search(query: str) -> dict | None:
     if resp.status_code != 200:
         return None
     pages = (resp.json().get("query") or {}).get("pages") or {}
+    terms = _key_terms(query)
     candidates = []
     for page in pages.values():
         info = (page.get("imageinfo") or [{}])[0]
-        if info.get("mime", "") not in ("image/jpeg", "image/png"):
+        mime = info.get("mime", "")
+        if mime not in ("image/jpeg", "image/png", "image/svg+xml"):
             continue
+        # thumburl is a PNG render at our requested width (sharp, even for SVG).
         thumb = info.get("thumburl")
         if not thumb:
             continue
@@ -248,20 +304,28 @@ async def _commons_search(query: str) -> dict | None:
             or _clean(meta.get("ImageDescription", {}).get("value", ""))
             or _clean(file_base)
         )
-        # Prefer English: score the filename AND the human title.
-        en = _english_score(file_base) + _english_score(title)
+        not_foreign, en_bonus = _english_flags(file_base, title)
+        # Sharpness bucket: SVG is vector (always crisp at 1600px) so rank it
+        # highest; otherwise reward higher-resolution rasters.
+        width = int(info.get("width") or 0)
+        if mime == "image/svg+xml":
+            res_bucket = 3
+        else:
+            res_bucket = 2 if width >= 1400 else 1 if width >= 900 else 0
+        # Relevance: does the candidate actually depict the concept?
+        relevant = 1 if _has_term(f"{file_base} {title}", terms) else 0
         candidates.append((
-            en, -page.get("index", 999),  # English first, then search rank
+            # Avoid foreign, THEN on-topic, THEN sharpest, then English, then rank.
+            not_foreign, relevant, res_bucket, en_bonus, -page.get("index", 999),
             {"url": thumb, "title": title or "Medical illustration",
              "source": "Wikimedia Commons", "page_url": info.get("descriptionurl") or ""},
         ))
     if not candidates:
         return None
-    # Highest English score, then best (lowest) search index.
-    candidates.sort(key=lambda c: (c[0], c[1]), reverse=True)
+    candidates.sort(key=lambda c: (c[0], c[1], c[2], c[3], c[4]), reverse=True)
     # Return the first candidate that actually loads (verified), so the app
     # never receives a dead URL. Check a few in case the top one is broken.
-    for _, _, img in candidates[:5]:
+    for *_, img in candidates[:5]:
         if await _image_loads(img["url"]):
             return img
     return None
