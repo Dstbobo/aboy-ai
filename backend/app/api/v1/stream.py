@@ -27,6 +27,7 @@ from app.core.intelligence.profile import (
 )
 from app.config import get_settings
 from app.core.token_budget import LIMIT_MESSAGE, add_usage, is_exhausted
+from app.utils.background import fire_and_forget
 from app.models.query import QueryRequest
 from app.models.user import AuthenticatedUser
 from app.utils.emergency import check_emergency
@@ -111,7 +112,7 @@ async def _event_generator(
     # Record actual token usage against the daily budget (background).
     total_tokens = (usage.get("input", 0) or 0) + (usage.get("output", 0) or 0)
     if total_tokens:
-        asyncio.create_task(add_usage(user.user_id, total_tokens))
+        fire_and_forget(add_usage(user.user_id, total_tokens))
 
     # Image arrives below the text (never blocks the stream's first token).
     if img_task is not None:
@@ -136,7 +137,7 @@ async def _event_generator(
         cls.tier, "haiku" if model == haiku else "sonnet", ttft_ms, latency_ms, request.query,
     )
 
-    asyncio.create_task(log_query(AuditEvent(
+    fire_and_forget(log_query(AuditEvent(
         user_id=user.user_id, user_role=user.role, session_id=session_id,
         query_raw=request.query, query_enhanced=None, query_classification=f"tier{cls.tier}",
         sources_retrieved=[{"id": c.get("id"), "similarity": c.get("similarity")} for c in reranked],
@@ -147,7 +148,7 @@ async def _event_generator(
         flagged_for_review=False, ip_hash=ip_hash,
     )))
     if cls.tier != TIER_CONVERSATIONAL:
-        asyncio.create_task(update_profile_after_query(user.user_id, user.role, session_id, request.query))
+        fire_and_forget(update_profile_after_query(user.user_id, user.role, session_id, request.query))
 
 
 @router.post("/query/stream")

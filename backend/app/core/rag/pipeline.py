@@ -11,6 +11,7 @@ from app.core.llm.client import generate_response
 from app.core.llm.prompts import build_user_prompt, get_system_prompt
 from app.core.llm.safety import is_safe_output
 from app.core.media.image_search import find_medical_image
+from app.utils.background import fire_and_forget
 from app.core.intelligence.profile import (
     get_raw_profile,
     personalization_snippet,
@@ -134,7 +135,7 @@ async def run_rag_pipeline(
         system_prompt, user_prompt, model=model, max_tokens=8192
     )
     # Record actual usage against the daily budget (background).
-    asyncio.create_task(add_usage(user.user_id, (tokens_in or 0) + (tokens_out or 0)))
+    fire_and_forget(add_usage(user.user_id, (tokens_in or 0) + (tokens_out or 0)))
 
     if not is_safe_output(answer):
         answer = "I'm unable to provide a response to this query. Please consult a qualified healthcare professional."
@@ -181,9 +182,9 @@ async def run_rag_pipeline(
         flagged_for_review=False,
         ip_hash=ip_hash,
     )
-    asyncio.create_task(log_query(audit_event))
+    fire_and_forget(log_query(audit_event))
     if cls.tier != TIER_CONVERSATIONAL:
-        asyncio.create_task(update_profile_after_query(user.user_id, user.role, session_id, request.query))
+        fire_and_forget(update_profile_after_query(user.user_id, user.role, session_id, request.query))
 
     return QueryResponse(
         answer=answer,
