@@ -57,6 +57,22 @@ async def run_rag_pipeline(
 
     cls = classify(request.query)
 
+    # ── Auto medical illustration (kick off early so even cache hits get one) ──
+    img_task = (
+        asyncio.create_task(find_medical_image(request.query, user.role))
+        if cls.tier != TIER_CONVERSATIONAL
+        else None
+    )
+
+    async def _await_image():
+        if img_task is None:
+            return None
+        try:
+            img = await img_task
+            return MedicalImage(**img) if img else None
+        except Exception:
+            return None
+
     # ── Exact response cache (skip the entire pipeline) ──
     # Keyed by normalized query + role so personalised answers stay correct.
     resp_key = f"resp:{user.role}:{query_hash(request.query)}"
@@ -72,19 +88,13 @@ async def run_rag_pipeline(
                 emergency_triggered=emergency_triggered,
                 model_used=cached.get("model_used", settings.anthropic_model),
                 latency_ms=latency_ms,
+                image=await _await_image(),
             )
 
     # ── Model selection (tiering) ──
     haiku = settings.anthropic_haiku_model
     sonnet = settings.anthropic_model
     model = haiku if (cls.tier == TIER_CONVERSATIONAL or (cls.tier == TIER_STATIC and not cls.detailed)) else sonnet
-
-    # ── Auto medical illustration (runs in parallel with retrieval/gen) ──
-    img_task = (
-        asyncio.create_task(find_medical_image(request.query, user.role))
-        if cls.tier != TIER_CONVERSATIONAL
-        else None
-    )
 
     # ── Retrieval (tier-aware, parallel where both are needed) ──
     reranked: list[dict] = []
@@ -122,16 +132,7 @@ async def run_rag_pipeline(
         answer = "I'm unable to provide a response to this query. Please consult a qualified healthcare professional."
 
     citations = _build_citations(reranked, web_results)
-
-    image = None
-    if img_task is not None:
-        try:
-            img = await img_task
-            if img:
-                image = MedicalImage(**img)
-        except Exception:
-            image = None
-
+    image = await _await_image()
     latency_ms = int((time.monotonic() - start) * 1000)
     ip_hash = hashlib.sha256(client_ip.encode()).hexdigest() if client_ip else None
 
