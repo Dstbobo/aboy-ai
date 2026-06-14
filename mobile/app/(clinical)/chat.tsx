@@ -203,6 +203,19 @@ export default function ChatScreen() {
     }
   }
 
+  // Refresh: regenerate an answer by re-asking the question that produced it.
+  function regenerate(assistant: { id: string }) {
+    if (isLoading) return;
+    const msgs = useChatStore.getState().messages;
+    const idx = msgs.findIndex((m) => m.id === assistant.id);
+    for (let i = idx - 1; i >= 0; i--) {
+      if (msgs[i].role === 'user') {
+        sendMessage(msgs[i].content);
+        return;
+      }
+    }
+  }
+
   function stopGenerating() {
     // Stop the stream; keep whatever text already arrived.
     stopStreamRef.current?.();
@@ -392,7 +405,7 @@ export default function ChatScreen() {
                   styles.listContent,
                   { paddingTop: insets.top + HEADER_HEIGHT + 10, paddingBottom: barHeight + bottomSpacer },
                 ]}
-                renderItem={({ item }) => <MessageBubble message={item} />}
+                renderItem={({ item }) => <MessageBubble message={item} onRefresh={regenerate} />}
               />
             )}
 

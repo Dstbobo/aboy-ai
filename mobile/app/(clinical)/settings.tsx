@@ -19,6 +19,7 @@ import { useAuthStore } from '@/stores/auth.store';
 import { useChatStore } from '@/stores/chat.store';
 import { useProgressStore } from '@/stores/progress.store';
 import { api } from '@/services/api';
+import { getUsage, type Usage } from '@/services/usage.service';
 import { ROLE_CATEGORIES, ROLE_LABELS, getRoleIcon, type UserRole } from '@/constants/roles';
 import { COLORS } from '@/constants/theme';
 
@@ -42,6 +43,7 @@ export default function SettingsScreen() {
   const { topics, totalQueries } = useProgressStore();
   const [notifications, setNotifications] = useState(true);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [usage, setUsage] = useState<Usage | null>(null);
   const [rolePickerOpen, setRolePickerOpen] = useState(false);
 
   const role = (profile?.role ?? user?.role ?? 'student_med') as UserRole;
@@ -52,7 +54,12 @@ export default function SettingsScreen() {
       .get<Profile>('/api/v1/profile')
       .then((r) => setProfile(r.data))
       .catch(() => {});
+    getUsage()
+      .then(setUsage)
+      .catch(() => {});
   }, []);
+
+  const usagePct = usage && usage.limit > 0 ? Math.min(100, (usage.used / usage.limit) * 100) : 0;
 
   async function submitRoleChange(toRole: UserRole) {
     setRolePickerOpen(false);
@@ -149,6 +156,21 @@ export default function SettingsScreen() {
             <Text style={styles.progressLink}>View details ›</Text>
           </View>
         </TouchableOpacity>
+
+        {/* Daily usage */}
+        <Text style={styles.sectionLabel}>USAGE</Text>
+        <View style={styles.card}>
+          <View style={styles.usageTop}>
+            <MaterialCommunityIcons name="lightning-bolt" size={22} color={COLORS.primary} />
+            <Text style={styles.rowLabel}>
+              Tokens used today: {usage ? `${usage.used.toLocaleString()} / ${usage.limit.toLocaleString()}` : '—'}
+            </Text>
+          </View>
+          <View style={styles.usageBarTrack}>
+            <View style={[styles.usageBarFill, { width: `${usagePct}%` }]} />
+          </View>
+          <Text style={styles.usageReset}>Resets at midnight</Text>
+        </View>
 
         {/* Preferences */}
         <Text style={styles.sectionLabel}>PREFERENCES</Text>
@@ -299,6 +321,10 @@ const styles = StyleSheet.create({
   progressLink: { fontSize: 13.5, color: COLORS.primary, fontWeight: '600' },
   version: { textAlign: 'center', color: COLORS.textSecondary, fontSize: 12, marginTop: 10 },
   legalDivider: { height: StyleSheet.hairlineWidth, backgroundColor: COLORS.border, marginLeft: 36 },
+  usageTop: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingTop: 12 },
+  usageBarTrack: { height: 8, borderRadius: 4, backgroundColor: COLORS.border, marginTop: 12, overflow: 'hidden' },
+  usageBarFill: { height: 8, borderRadius: 4, backgroundColor: COLORS.primary },
+  usageReset: { fontSize: 12.5, color: COLORS.textSecondary, marginTop: 8, paddingBottom: 12 },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' },
   sheet: {
     backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20,
