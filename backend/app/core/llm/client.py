@@ -11,7 +11,10 @@ def _get_anthropic_client() -> anthropic.AsyncAnthropic:
     # Persistent keep-alive connection pool — connections reused, not recreated.
     http_client = httpx.AsyncClient(
         limits=httpx.Limits(max_keepalive_connections=20, max_connections=40, keepalive_expiry=60),
-        timeout=httpx.Timeout(30.0, connect=5.0),
+        # A full 8192-token answer can take well over 30s to generate. The old
+        # 30s read timeout caused APITimeoutError on the non-streaming /query
+        # path for long answers; allow up to 120s to read the completion.
+        timeout=httpx.Timeout(120.0, connect=5.0),
     )
     return anthropic.AsyncAnthropic(api_key=get_settings().anthropic_api_key, http_client=http_client)
 
