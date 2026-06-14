@@ -577,6 +577,15 @@ _IMAGE_DIRECTIVE = (
     "for any inability to provide images."
 )
 
+# Anti-sycophancy: start with substance, no praise/filler openers.
+_TONE_DIRECTIVE = (
+    " Begin every response directly with the substantive answer. Never open with "
+    "praise, flattery, or filler such as 'Great question', 'Excellent question', "
+    "'Good question to build on', 'That's a great topic', 'I'm glad you asked', or "
+    "any similar phrase. Do not compliment the question or the user. Get straight "
+    "to the point."
+)
+
 
 def _base_for(role: str, sub_role: str | None) -> str:
     if sub_role:
@@ -596,7 +605,7 @@ def _base_for(role: str, sub_role: str | None) -> str:
 
 def get_system_prompt(role: str, sub_role: str | None = None) -> str:
     """Return the most specific system prompt for this role + sub_role combination."""
-    return _base_for(role, sub_role) + _IMAGE_DIRECTIVE
+    return _base_for(role, sub_role) + _IMAGE_DIRECTIVE + _TONE_DIRECTIVE
 
 
 def build_user_prompt(query: str, context: str, history: list | None = None) -> str:

@@ -197,6 +197,23 @@ def _clean(text: str, limit: int = 90) -> str:
     return text[:limit].rstrip(" .,") if text else ""
 
 
+async def _image_loads(url: str) -> bool:
+    """True only if the URL returns a real, non-trivial image. We verify before
+    storing/returning so the app never receives a URL that will fail to render."""
+    try:
+        async with httpx.AsyncClient(
+            timeout=_TIMEOUT, headers={"User-Agent": _UA}, follow_redirects=True
+        ) as client:
+            resp = await client.get(url)
+        return (
+            resp.status_code == 200
+            and resp.headers.get("content-type", "").startswith("image/")
+            and len(resp.content) > 1024
+        )
+    except Exception:
+        return False
+
+
 async def _commons_search(query: str) -> dict | None:
     params = {
         "action": "query",
@@ -240,7 +257,12 @@ async def _commons_search(query: str) -> dict | None:
         return None
     # Highest English score, then best (lowest) search index.
     candidates.sort(key=lambda c: (c[0], c[1]), reverse=True)
-    return candidates[0][2]
+    # Return the first candidate that actually loads (verified), so the app
+    # never receives a dead URL. Check a few in case the top one is broken.
+    for _, _, img in candidates[:5]:
+        if await _image_loads(img["url"]):
+            return img
+    return None
 
 
 async def _pubchem_structure(drug: str) -> dict | None:
@@ -254,8 +276,11 @@ async def _pubchem_structure(drug: str) -> dict | None:
     if not cids:
         return None
     cid = cids[0]
+    url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/PNG?image_size=large"
+    if not await _image_loads(url):
+        return None
     return {
-        "url": f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/PNG?image_size=large",
+        "url": url,
         "title": f"{drug.capitalize()} - chemical structure",
         "source": "PubChem",
         "page_url": f"https://pubchem.ncbi.nlm.nih.gov/compound/{cid}",
