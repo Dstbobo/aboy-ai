@@ -13,15 +13,26 @@ from __future__ import annotations
 
 import logging
 import re
+from urllib.parse import quote
 
 import httpx
+
+from app.core.cache import cache_get, cache_set
 
 logger = logging.getLogger(__name__)
 
 # Wikimedia asks every API client to send a descriptive User-Agent.
 _UA = "AboyAI/1.0 (https://aboyai.com; medical education) httpx"
 _COMMONS = "https://commons.wikimedia.org/w/api.php"
+_PUBCHEM = "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name"
 _TIMEOUT = 5.0
+
+# Image illustrations for a concept never change, so cache aggressively.
+# A successful lookup is reused for 30 days; a miss is remembered for 1 day
+# so we don't hammer the upstream APIs for concepts that have no image.
+_TTL_HIT = 30 * 24 * 60 * 60
+_TTL_MISS = 24 * 60 * 60
+_CACHE_VERSION = "v1"
 
 # ── Visual-concept detection ───────────────────────────────────────────────
 # Each entry: a trigger (matched as a whole word, case-insensitive) → the search
@@ -90,24 +101,50 @@ _CONCEPTS: list[tuple[str, str]] = [
     (r"\bintubation\b", "endotracheal intubation"),
 ]
 
-# Role-specific suffix nudges (applied on top of the matched concept query).
-_ROLE_BIAS: dict[str, str] = {
-    "pro_pharmacist": "",
-    "ops_": "",
+# Common drugs (helps reliably extract the compound name for PubChem).
+_KNOWN_DRUGS = {
+    "metformin", "insulin", "aspirin", "paracetamol", "acetaminophen", "ibuprofen",
+    "amoxicillin", "ceftriaxone", "azithromycin", "warfarin", "heparin", "atorvastatin",
+    "simvastatin", "lisinopril", "ramipril", "amlodipine", "losartan", "metoprolol",
+    "bisoprolol", "furosemide", "spironolactone", "omeprazole", "pantoprazole",
+    "salbutamol", "albuterol", "prednisolone", "prednisone", "hydrocortisone",
+    "morphine", "codeine", "tramadol", "diazepam", "lorazepam", "haloperidol",
+    "levothyroxine", "digoxin", "clopidogrel", "gentamicin", "ciprofloxacin",
+    "vancomycin", "paclitaxel", "methotrexate", "caffeine", "penicillin",
+    "amiodarone", "gabapentin", "sertraline", "fluoxetine", "diclofenac",
 }
+_DRUG_SUFFIX = re.compile(
+    r"\b([a-z]{5,}(?:in|ol|ide|one|ine|am|pril|sartan|cillin|mycin|statin|azole|pam))\b"
+)
+_STRUCTURE_INTENT = re.compile(r"chemical structure|molecular structure|\bstructure of\b")
+
+# Sentinel prefix routing a query to the PubChem structure API instead of Commons.
+_PUBCHEM_TAG = "pubchem:"
+
+
+def _extract_drug(q: str) -> str | None:
+    for d in _KNOWN_DRUGS:
+        if re.search(rf"\b{d}\b", q):
+            return d
+    m = _DRUG_SUFFIX.search(q)
+    return m.group(1) if m else None
 
 
 def detect_visual_query(question: str, role: str) -> str | None:
-    """Return a Wikimedia search query if the question is visual, else None."""
+    """Return a search query if the question is visual, else None.
+
+    Drug-structure questions return a ``pubchem:<drug>`` marker so the exact
+    molecular structure is fetched from PubChem; everything else returns a
+    Wikimedia Commons search string.
+    """
     q = question.lower()
 
-    # Pharmacists asking about a drug → prefer a molecular structure image.
-    if role.startswith("pro_pharmacist") and re.search(
-        r"structure|mechanism|moa|molecul", q
-    ):
-        m = re.search(r"\b([a-z]{4,}(?:in|ol|ide|one|am|pril|sartan|cillin|mycin))\b", q)
-        if m:
-            return f"{m.group(1)} chemical structure"
+    # Any role asking for a drug's chemical structure → PubChem structure PNG.
+    pharmacist = role.startswith("pro_pharmacist")
+    if _STRUCTURE_INTENT.search(q) or (pharmacist and re.search(r"\bmoa\b|mechanism|molecul", q)):
+        drug = _extract_drug(q)
+        if drug:
+            return f"{_PUBCHEM_TAG}{drug}"
 
     for pattern, query in _CONCEPTS:
         if re.search(pattern, q):
@@ -166,16 +203,54 @@ async def _commons_search(query: str) -> dict | None:
     return None
 
 
+async def _pubchem_structure(drug: str) -> dict | None:
+    """Exact 2D chemical structure PNG for a drug, via PubChem (verified by CID)."""
+    name = quote(drug)
+    async with httpx.AsyncClient(timeout=_TIMEOUT, headers={"User-Agent": _UA}) as client:
+        cid_resp = await client.get(f"{_PUBCHEM}/{name}/cids/JSON")
+    if cid_resp.status_code != 200:
+        return None
+    cids = (cid_resp.json().get("IdentifierList") or {}).get("CID") or []
+    if not cids:
+        return None
+    cid = cids[0]
+    return {
+        "url": f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/PNG?image_size=large",
+        "title": f"{drug.capitalize()} — chemical structure",
+        "source": "PubChem",
+        "page_url": f"https://pubchem.ncbi.nlm.nih.gov/compound/{cid}",
+    }
+
+
+async def _lookup(query: str) -> dict | None:
+    if query.startswith(_PUBCHEM_TAG):
+        return await _pubchem_structure(query[len(_PUBCHEM_TAG):])
+    return await _commons_search(query)
+
+
 async def find_medical_image(question: str, role: str) -> dict | None:
-    """Detect a visual medical concept and return one illustration, or None."""
+    """Detect a visual medical concept and return one illustration, or None.
+
+    Results are cached in Redis keyed by the detected concept, so each concept
+    is searched upstream only once (then reused for everyone, for 30 days).
+    """
     query = detect_visual_query(question, role)
     if not query:
         return None
+
+    cache_key = f"img:{_CACHE_VERSION}:{query}"
+    cached = await cache_get(cache_key)
+    if cached is not None:
+        # Misses are stored as {} so we don't re-search concepts with no image.
+        return cached or None
+
     try:
-        image = await _commons_search(query)
-        if image:
-            logger.info("IMAGE match q=%.40s -> %s", question, image["title"])
-        return image
+        image = await _lookup(query)
     except Exception as exc:  # never let image lookup break a response
-        logger.warning("IMAGE lookup failed: %s", exc)
-        return None
+        logger.warning("IMAGE lookup failed for %r: %s", query, exc)
+        return None  # transient — don't cache, allow a retry next time
+
+    await cache_set(cache_key, image or {}, _TTL_HIT if image else _TTL_MISS)
+    if image:
+        logger.info("IMAGE match q=%.40s -> %s", question, image["title"])
+    return image
