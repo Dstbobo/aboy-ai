@@ -18,8 +18,42 @@ interface Props {
   onRefresh?: (message: Message) => void;
 }
 
-function stripMarkdown(md: string): string {
-  return md.replace(/[#*_`>~|]/g, '').replace(/\[(.*?)\]\(.*?\)/g, '$1').replace(/\s{2,}/g, ' ').trim();
+// Turn markdown into clean, speakable prose.
+function cleanForSpeech(md: string): string {
+  return (md || '')
+    .replace(/```[\s\S]*?```/g, ' ')          // fenced code blocks
+    .replace(/`([^`]+)`/g, '$1')              // inline code
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')    // images
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')  // links -> text
+    .replace(/^\s{0,3}[#>]+\s*/gm, '')        // headings / blockquote markers
+    .replace(/^\s*[-*+]\s+/gm, '')            // list bullets
+    .replace(/\|/g, ' ')                      // table pipes
+    .replace(/[*_~#`>]/g, ' ')                // stray markdown
+    .replace(/\s*\n\s*\n\s*/g, '. ')          // paragraph breaks -> pause
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+// expo-speech / Android TextToSpeech reject very long strings (~4000 chars),
+// which made long answers play nothing. Split into sentence-aligned chunks.
+function speechChunks(text: string, max = 3500): string[] {
+  const sentences = text.split(/(?<=[.!?])\s+/);
+  const chunks: string[] = [];
+  let cur = '';
+  for (const s of sentences) {
+    if (cur && (cur.length + s.length + 1) > max) {
+      chunks.push(cur);
+      cur = '';
+    }
+    if (s.length > max) {
+      // Hard-split an over-long sentence.
+      for (let i = 0; i < s.length; i += max) chunks.push(s.slice(i, i + max));
+    } else {
+      cur = cur ? `${cur} ${s}` : s;
+    }
+  }
+  if (cur) chunks.push(cur);
+  return chunks;
 }
 
 export function MessageBubble({ message, onRefresh }: Props) {
@@ -50,19 +84,28 @@ export function MessageBubble({ message, onRefresh }: Props) {
     } catch {}
   }
 
-  function togglePlay() {
+  async function togglePlay() {
     if (speaking) {
       Speech.stop();
       setSpeaking(false);
-    } else {
-      setSpeaking(true);
-      Speech.speak(stripMarkdown(message.content), {
+      return;
+    }
+    const text = cleanForSpeech(message.content);
+    if (!text) return;
+    const chunks = speechChunks(text);
+    Speech.stop(); // clear any prior queue
+    setSpeaking(true);
+    chunks.forEach((chunk, i) => {
+      const isLast = i === chunks.length - 1;
+      Speech.speak(chunk, {
+        language: 'en-US',
         rate: 1.0,
-        onDone: () => setSpeaking(false),
+        pitch: 1.0,
+        onDone: isLast ? () => setSpeaking(false) : undefined,
         onStopped: () => setSpeaking(false),
         onError: () => setSpeaking(false),
       });
-    }
+    });
   }
 
   async function rate(dir: 'up' | 'down') {

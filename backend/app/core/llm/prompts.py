@@ -577,6 +577,15 @@ _IMAGE_DIRECTIVE = (
     "for any inability to provide images."
 )
 
+# Anti-hallucination: never fabricate citations/sources.
+_CITATION_DIRECTIVE = (
+    " Citation integrity is mandatory: only ever cite sources that are explicitly "
+    "given to you in the Context of the user message. Never invent, fabricate, "
+    "or recall from memory any citation, source name, journal article, guideline "
+    "code, named statistic, or URL. If no sources are provided, give the answer "
+    "with no inline citations and no references list rather than inventing any."
+)
+
 # Anti-sycophancy: start with substance, no praise/filler openers.
 _TONE_DIRECTIVE = (
     " Begin every response directly with the substantive answer. Never open with "
@@ -605,7 +614,7 @@ def _base_for(role: str, sub_role: str | None) -> str:
 
 def get_system_prompt(role: str, sub_role: str | None = None) -> str:
     """Return the most specific system prompt for this role + sub_role combination."""
-    return _base_for(role, sub_role) + _IMAGE_DIRECTIVE + _TONE_DIRECTIVE
+    return _base_for(role, sub_role) + _IMAGE_DIRECTIVE + _TONE_DIRECTIVE + _CITATION_DIRECTIVE
 
 
 def build_user_prompt(query: str, context: str, history: list | None = None) -> str:
@@ -619,11 +628,26 @@ def build_user_prompt(query: str, context: str, history: list | None = None) -> 
             "Conversation so far (the user may refer back to it — includes both "
             "typed and voice turns):\n" + "\n".join(lines) + "\n\n"
         )
-    return (
-        f"{history_block}"
-        "Use the following verified medical sources to answer the question. "
-        "You MUST cite at least one source in your response using inline citation format "
-        "like [Source 1] or [Web 1]. Include a sources list at the end.\n\n"
-        f"Context:\n{context}\n\n"
-        f"Question: {query}"
-    )
+
+    if context and context.strip():
+        # Sources were retrieved — cite ONLY these, never anything else.
+        instruction = (
+            "Answer the question using ONLY the verified medical sources in the Context "
+            "below. Cite the sources you use inline as [Source 1], [Source 2], [Web 1] etc., "
+            "matching the numbering in the Context, and include a short sources list at the end. "
+            "Do NOT cite, name, or list any source that is not present in the Context. "
+            "Never invent references, study names, guideline numbers, statistics, or URLs. "
+            "If the Context does not cover part of the question, answer that part from general "
+            "medical knowledge and clearly do so WITHOUT attaching a citation to it.\n\n"
+            f"Context:\n{context}\n\n"
+        )
+    else:
+        # No sources retrieved — must NOT fabricate any.
+        instruction = (
+            "No verified sources were retrieved for this question. Answer from your general "
+            "medical knowledge. Do NOT include any inline citations like [Source 1] and do NOT "
+            "add a sources/references list — inventing or naming specific sources, studies, "
+            "guidelines, or URLs is strictly forbidden. Simply give a clear, accurate answer.\n\n"
+        )
+
+    return f"{history_block}{instruction}Question: {query}"

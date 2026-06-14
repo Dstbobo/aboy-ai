@@ -34,7 +34,7 @@ _TIMEOUT = 5.0
 _TTL_HIT = 30 * 24 * 60 * 60
 _TTL_MISS = 24 * 60 * 60
 # Bump to invalidate stale Redis image entries (non-English / low-res variants).
-_CACHE_VERSION = "v4"
+_CACHE_VERSION = "v5"
 
 # ── Visual-concept detection ───────────────────────────────────────────────
 # Each entry: a trigger (matched as a whole word, case-insensitive) → the search
@@ -178,6 +178,13 @@ _FOREIGN_LANG_CODES = {
     "zul", "tgl", "fil",
 }
 _EN_MARKER = re.compile(r"(?:[ _\-(](?:en|eng|english)\b|\benglish\b)", re.IGNORECASE)
+
+# Exclude diagrams that have number-only labels or no labels at all — these are
+# not useful for studying (the student can't read the part names).
+_BANNED_IMAGE = re.compile(
+    r"num\s*label|numbered|un\s*label|no[ _\-]?labels?|no[ _\-]?text|without[ _\-]?labels?|\bblank\b",
+    re.IGNORECASE,
+)
 _TRAILING_LANG = re.compile(r"[ _\-]([a-z]{2,4})$", re.IGNORECASE)
 
 
@@ -304,6 +311,9 @@ async def _commons_search(query: str) -> dict | None:
             or _clean(meta.get("ImageDescription", {}).get("value", ""))
             or _clean(file_base)
         )
+        # Skip number-only / unlabelled diagrams — labels must be readable text.
+        if _BANNED_IMAGE.search(f"{file_base} {title}"):
+            continue
         not_foreign, en_bonus = _english_flags(file_base, title)
         # Sharpness bucket: SVG is vector (always crisp at 1600px) so rank it
         # highest; otherwise reward higher-resolution rasters.
