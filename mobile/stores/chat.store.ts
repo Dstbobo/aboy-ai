@@ -143,12 +143,14 @@ export const useChatStore = create<ChatState>()(
       storage: createJSONStorage(() => AsyncStorage),
       // Persist only the conversation itself (not transient loading flags).
       partialize: (s) => ({ messages: s.messages, sessionId: s.sessionId }),
-      // Revive Date objects + drop any half-streamed message on cold start.
+      // App was fully closed and reopened → ALWAYS start a fresh chat. The
+      // previous conversation is already saved to History (server-side), so
+      // nothing is lost. We never restore the old conversation on cold start.
       onRehydrateStorage: () => (state) => {
         if (!state) return;
-        state.messages = (state.messages || [])
-          .filter((m) => !m.isStreaming && m.content)
-          .map((m) => ({ ...m, timestamp: new Date(m.timestamp) }));
+        state.messages = [];
+        state.sessionId = null;
+        state.streamingContent = '';
       },
     },
   ),

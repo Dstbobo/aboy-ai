@@ -77,10 +77,13 @@ function AppLifecycle() {
       if (state === 'active') {
         supabase.auth.startAutoRefresh().catch(() => {});
         supabase.auth.refreshSession().catch(() => {}); // proactive silent refresh
-        // Fresh chat if we were away for more than 2 minutes and not mid-stream.
+        // Away ≥ 30 min → start a fresh chat + show the personalised welcome.
+        // Away < 30 min → leave the conversation so the user resumes exactly
+        // where they were. Either way prior turns are already in History.
+        const THIRTY_MIN = 30 * 60 * 1000;
         const away = backgroundedAt.current ? Date.now() - backgroundedAt.current : 0;
         const chat = useChatStore.getState();
-        if (away > 120000 && !chat.isLoading && chat.messages.length > 0) {
+        if (away >= THIRTY_MIN && !chat.isLoading && chat.messages.length > 0) {
           chat.clearChat();
         }
         backgroundedAt.current = null;
