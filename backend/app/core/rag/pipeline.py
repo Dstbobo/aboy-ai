@@ -10,7 +10,7 @@ from app.core.token_budget import LIMIT_MESSAGE, add_usage, is_exhausted
 from app.core.llm.client import generate_response
 from app.core.llm.prompts import build_user_prompt, get_system_prompt
 from app.core.llm.safety import is_safe_output
-from app.core.llm.sanitize import strip_reference_section
+from app.core.llm.sanitize import sanitize_answer
 from app.core.media.image_search import find_medical_image
 from app.utils.background import fire_and_forget
 from app.core.intelligence.profile import (
@@ -139,8 +139,8 @@ async def run_rag_pipeline(
     # Record actual usage against the daily budget (background).
     fire_and_forget(add_usage(user.user_id, (tokens_in or 0) + (tokens_out or 0)))
 
-    # Remove any model-written Sources/References list (fabricated refs live here).
-    answer = strip_reference_section(answer)
+    # Strip fabricated references + "see diagram below" image references.
+    answer = sanitize_answer(answer)
 
     if not is_safe_output(answer):
         answer = "I'm unable to provide a response to this query. Please consult a qualified healthcare professional."
