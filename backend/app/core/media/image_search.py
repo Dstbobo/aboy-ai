@@ -18,6 +18,7 @@ from urllib.parse import quote
 import httpx
 
 from app.core.cache import cache_get, cache_set
+from app.db.supabase import get_db
 
 logger = logging.getLogger(__name__)
 
@@ -222,35 +223,96 @@ async def _pubchem_structure(drug: str) -> dict | None:
     }
 
 
-async def _lookup(query: str) -> dict | None:
+async def _live_lookup(query: str) -> dict | None:
     if query.startswith(_PUBCHEM_TAG):
         return await _pubchem_structure(query[len(_PUBCHEM_TAG):])
     return await _commons_search(query)
 
 
+async def _db_get(concept: str) -> dict | None | bool:
+    """Read a pre-fetched image from the DB.
+
+    Returns the image dict (hit), {} (known miss), or None (not in DB yet).
+    """
+    try:
+        db = await get_db()
+        res = await db.table("medical_images").select("*").eq("concept", concept).maybe_single().execute()
+        if res and res.data:
+            row = res.data
+            if not row.get("found"):
+                return {}
+            return {
+                "url": row["url"], "title": row.get("title") or "Medical illustration",
+                "source": row.get("source") or "", "page_url": row.get("page_url") or "",
+            }
+    except Exception as exc:
+        logger.warning("medical_images read failed: %s", exc)
+    return None
+
+
+async def _db_put(concept: str, image: dict | None) -> None:
+    try:
+        db = await get_db()
+        row = {"concept": concept, "found": bool(image), "updated_at": "now()"}
+        if image:
+            row.update({"url": image["url"], "title": image.get("title"),
+                        "source": image.get("source"), "page_url": image.get("page_url")})
+        await db.table("medical_images").upsert(row).execute()
+    except Exception as exc:
+        logger.warning("medical_images write failed: %s", exc)
+
+
+async def resolve_concept(concept: str, *, allow_live: bool = True) -> dict | None:
+    """Return an image for a detector concept: DB first, then (optionally) a
+    live fetch that is stored back into the DB so it is instant next time."""
+    # L1: Redis (fast path for hot concepts).
+    cache_key = f"img:{_CACHE_VERSION}:{concept}"
+    cached = await cache_get(cache_key)
+    if cached is not None:
+        return cached or None
+
+    # L2: pre-fetched DB row (source of truth — reliable, no upstream call).
+    db_hit = await _db_get(concept)
+    if db_hit is not None:
+        image = db_hit or None
+        await cache_set(cache_key, image or {}, _TTL_HIT if image else _TTL_MISS)
+        return image
+
+    if not allow_live:
+        return None
+
+    # L3: live fetch, then persist to DB + Redis so it's reliable from now on.
+    try:
+        image = await _live_lookup(concept)
+    except Exception as exc:
+        logger.warning("IMAGE live lookup failed for %r: %s", concept, exc)
+        return None  # transient — don't persist a miss, allow a retry
+    await _db_put(concept, image)
+    await cache_set(cache_key, image or {}, _TTL_HIT if image else _TTL_MISS)
+    if image:
+        logger.info("IMAGE live->DB %.40s -> %s", concept, image["title"])
+    return image
+
+
 async def find_medical_image(question: str, role: str) -> dict | None:
     """Detect a visual medical concept and return one illustration, or None.
 
-    Results are cached in Redis keyed by the detected concept, so each concept
-    is searched upstream only once (then reused for everyone, for 30 days).
+    Lookup order: Redis → pre-fetched `medical_images` DB table → live fetch
+    (Wikimedia/PubChem) which is then stored in the DB for instant reuse.
     """
     query = detect_visual_query(question, role)
     if not query:
         return None
+    return await resolve_concept(query)
 
-    cache_key = f"img:{_CACHE_VERSION}:{query}"
-    cached = await cache_get(cache_key)
-    if cached is not None:
-        # Misses are stored as {} so we don't re-search concepts with no image.
-        return cached or None
 
-    try:
-        image = await _lookup(query)
-    except Exception as exc:  # never let image lookup break a response
-        logger.warning("IMAGE lookup failed for %r: %s", query, exc)
-        return None  # transient — don't cache, allow a retry next time
-
-    await cache_set(cache_key, image or {}, _TTL_HIT if image else _TTL_MISS)
-    if image:
-        logger.info("IMAGE match q=%.40s -> %s", question, image["title"])
-    return image
+def all_prefetch_concepts() -> list[str]:
+    """Every concept the detector can produce — used to pre-populate the DB."""
+    concepts = [q for _, q in _CONCEPTS]
+    concepts += [f"{_PUBCHEM_TAG}{d}" for d in sorted(_KNOWN_DRUGS)]
+    # De-dupe, preserve order.
+    seen, out = set(), []
+    for c in concepts:
+        if c not in seen:
+            seen.add(c); out.append(c)
+    return out

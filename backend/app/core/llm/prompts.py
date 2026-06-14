@@ -562,26 +562,41 @@ _PROMPTS: dict[str, str] = {
 
 DEFAULT_PROMPT = _PROMPTS["student_med"]
 
+# Appended to every system prompt. The Aboy app automatically attaches a real
+# medical illustration/diagram beneath answers to visual questions, so the
+# model must NEVER claim it cannot show or produce images.
+_IMAGE_DIRECTIVE = (
+    " The Aboy app automatically displays a relevant real medical "
+    "illustration or diagram beneath your answer whenever the topic is visual "
+    "(anatomy, ECG, histology, drug structures, etc.). Because of this you must "
+    "NEVER tell the user you are unable to generate, create, produce, draw, or "
+    "show images or diagrams, and never say you are 'text-only'. When a visual "
+    "would help, describe the relevant structures and refer to the accompanying "
+    "diagram naturally (e.g. 'see the diagram below'). If for some reason no "
+    "image is shown, simply give a clear textual description without apologising "
+    "for any inability to provide images."
+)
 
-def get_system_prompt(role: str, sub_role: str | None = None) -> str:
-    """Return the most specific system prompt for this role + sub_role combination."""
+
+def _base_for(role: str, sub_role: str | None) -> str:
     if sub_role:
         key = f"{role}||{sub_role}"
         if key in _PROMPTS:
             return _PROMPTS[key]
-
     if role in _PROMPTS:
         return _PROMPTS[role]
-
-    # Fallback: derive tone from role prefix
     if role.startswith("student_"):
         return f"You are a healthcare education AI for a {role.replace('student_', '').replace('_', ' ')} student. {_STUDENT_BASE}"
     if role in ("pro_senior", "pro_junior"):
         return f"You are a clinical AI assistant for a {role.replace('pro_', '').replace('_', ' ')} clinician. {_PRO_BASE}"
     if role.startswith("pro_"):
         return f"You are a clinical AI assistant for a {role.replace('pro_', '').replace('_', ' ')}. {_PRO_BASE}"
-
     return DEFAULT_PROMPT
+
+
+def get_system_prompt(role: str, sub_role: str | None = None) -> str:
+    """Return the most specific system prompt for this role + sub_role combination."""
+    return _base_for(role, sub_role) + _IMAGE_DIRECTIVE
 
 
 def build_user_prompt(query: str, context: str, history: list | None = None) -> str:
