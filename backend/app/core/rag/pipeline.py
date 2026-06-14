@@ -10,6 +10,7 @@ from app.core.token_budget import LIMIT_MESSAGE, add_usage, is_exhausted
 from app.core.llm.client import generate_response
 from app.core.llm.prompts import build_user_prompt, get_system_prompt
 from app.core.llm.safety import is_safe_output
+from app.core.llm.sanitize import strip_reference_section
 from app.core.media.image_search import find_medical_image
 from app.utils.background import fire_and_forget
 from app.core.intelligence.profile import (
@@ -81,7 +82,8 @@ async def run_rag_pipeline(
 
     # ── Exact response cache (skip the entire pipeline) ──
     # Keyed by normalized query + role so personalised answers stay correct.
-    resp_key = f"resp:{user.role}:{query_hash(request.query)}"
+    # v2: bump invalidates answers cached before the citation-sanitisation fix.
+    resp_key = f"resp:v2:{user.role}:{query_hash(request.query)}"
     if not request.history:  # only reuse for fresh (non-follow-up) questions
         cached = await cache_get(resp_key)
         if cached:
@@ -136,6 +138,9 @@ async def run_rag_pipeline(
     )
     # Record actual usage against the daily budget (background).
     fire_and_forget(add_usage(user.user_id, (tokens_in or 0) + (tokens_out or 0)))
+
+    # Remove any model-written Sources/References list (fabricated refs live here).
+    answer = strip_reference_section(answer)
 
     if not is_safe_output(answer):
         answer = "I'm unable to provide a response to this query. Please consult a qualified healthcare professional."

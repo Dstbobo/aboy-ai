@@ -34,7 +34,7 @@ _TIMEOUT = 5.0
 _TTL_HIT = 30 * 24 * 60 * 60
 _TTL_MISS = 24 * 60 * 60
 # Bump to invalidate stale Redis image entries (non-English / low-res variants).
-_CACHE_VERSION = "v5"
+_CACHE_VERSION = "v6"
 
 # ── Visual-concept detection ───────────────────────────────────────────────
 # Each entry: a trigger (matched as a whole word, case-insensitive) → the search
@@ -179,10 +179,11 @@ _FOREIGN_LANG_CODES = {
 }
 _EN_MARKER = re.compile(r"(?:[ _\-(](?:en|eng|english)\b|\benglish\b)", re.IGNORECASE)
 
-# Exclude diagrams that have number-only labels or no labels at all — these are
-# not useful for studying (the student can't read the part names).
+# Exclude diagrams that have number-only labels, no labels, or mixed-language
+# labels — students need readable English text labels on the diagram.
 _BANNED_IMAGE = re.compile(
-    r"num\s*label|numbered|un\s*label|no[ _\-]?labels?|no[ _\-]?text|without[ _\-]?labels?|\bblank\b",
+    r"num\s*label|numbered|un\s*label|no[ _\-]?labels?|no[ _\-]?text|"
+    r"without[ _\-]?labels?|\bblank\b|multi\s*lingual|multilanguage",
     re.IGNORECASE,
 )
 _TRAILING_LANG = re.compile(r"[ _\-]([a-z]{2,4})$", re.IGNORECASE)
@@ -325,8 +326,10 @@ async def _commons_search(query: str) -> dict | None:
         # Relevance: does the candidate actually depict the concept?
         relevant = 1 if _has_term(f"{file_base} {title}", terms) else 0
         candidates.append((
-            # Avoid foreign, THEN on-topic, THEN sharpest, then English, then rank.
-            not_foreign, relevant, res_bucket, en_bonus, -page.get("index", 999),
+            # Avoid foreign, THEN on-topic, THEN explicit English text labels
+            # (e.g. "...-en"), THEN sharpest, then search rank. English-labelled
+            # is preferred over a sharper unlabelled/number-only variant.
+            not_foreign, relevant, en_bonus, res_bucket, -page.get("index", 999),
             {"url": thumb, "title": title or "Medical illustration",
              "source": "Wikimedia Commons", "page_url": info.get("descriptionurl") or ""},
         ))

@@ -11,6 +11,7 @@ from app.core.auth.middleware import get_current_user
 from app.core.audit.logger import log_query
 from app.core.audit.models import AuditEvent
 from app.core.llm.client import stream_response
+from app.core.llm.sanitize import RefSuppressor, strip_reference_section
 from app.core.llm.prompts import build_user_prompt, get_system_prompt
 from app.core.rag.classifier import TIER_CONVERSATIONAL, TIER_STATIC, classify
 from app.core.rag.context_builder import build_context
@@ -103,11 +104,18 @@ async def _event_generator(
 
     full_text = ""
     usage: dict = {}
+    suppressor = RefSuppressor()  # strip any model-written Sources/References section
     async for chunk in stream_response(system_prompt, user_prompt, model=model, max_tokens=max_tokens, usage_out=usage):
         if first_token_at is None:
             first_token_at = time.monotonic()
         full_text += chunk
-        yield f"data: {json.dumps({'type': 'text', 'content': chunk})}\n\n"
+        safe = suppressor.feed(chunk)
+        if safe:
+            yield f"data: {json.dumps({'type': 'text', 'content': safe})}\n\n"
+    tail = suppressor.flush()
+    if tail:
+        yield f"data: {json.dumps({'type': 'text', 'content': tail})}\n\n"
+    full_text = strip_reference_section(full_text)
 
     # Record actual token usage against the daily budget (background).
     total_tokens = (usage.get("input", 0) or 0) + (usage.get("output", 0) or 0)

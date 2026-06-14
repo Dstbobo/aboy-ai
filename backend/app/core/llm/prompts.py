@@ -581,9 +581,14 @@ _IMAGE_DIRECTIVE = (
 _CITATION_DIRECTIVE = (
     " Citation integrity is mandatory: only ever cite sources that are explicitly "
     "given to you in the Context of the user message. Never invent, fabricate, "
-    "or recall from memory any citation, source name, journal article, guideline "
-    "code, named statistic, or URL. If no sources are provided, give the answer "
-    "with no inline citations and no references list rather than inventing any."
+    "or recall from memory any citation, source name, journal article, textbook, "
+    "guideline code, named statistic, or URL (for example, never write things "
+    "like 'Braunwald's Heart Disease' or 'AHA/ACC Guideline' unless that exact "
+    "source appears in the Context). Do NOT add a 'Sources', 'References', "
+    "'Citations', or 'Bibliography' section to your answer under any circumstances "
+    "— the app displays the real sources separately. At most, refer to provided "
+    "sources inline as [Source N]. If no sources are provided, give the answer "
+    "with no citations at all."
 )
 
 # Anti-sycophancy: start with substance, no praise/filler openers.
@@ -633,12 +638,13 @@ def build_user_prompt(query: str, context: str, history: list | None = None) -> 
         # Sources were retrieved — cite ONLY these, never anything else.
         instruction = (
             "Answer the question using ONLY the verified medical sources in the Context "
-            "below. Cite the sources you use inline as [Source 1], [Source 2], [Web 1] etc., "
-            "matching the numbering in the Context, and include a short sources list at the end. "
-            "Do NOT cite, name, or list any source that is not present in the Context. "
-            "Never invent references, study names, guideline numbers, statistics, or URLs. "
-            "If the Context does not cover part of the question, answer that part from general "
-            "medical knowledge and clearly do so WITHOUT attaching a citation to it.\n\n"
+            "below. You may refer to them inline as [Source 1], [Source 2], [Web 1] etc., "
+            "matching the numbering in the Context. Do NOT name or list any source that is "
+            "not present in the Context, and do NOT add a Sources/References/Bibliography "
+            "section — the app shows the sources separately. Never invent references, study "
+            "names, textbooks, guideline numbers, statistics, or URLs. If the Context does "
+            "not cover part of the question, answer that part from general medical knowledge "
+            "WITHOUT attaching a citation to it.\n\n"
             f"Context:\n{context}\n\n"
         )
     else:
