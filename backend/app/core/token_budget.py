@@ -5,6 +5,7 @@ Designed to flip to monthly later via the platform_settings 'token_limit_mode' f
 from datetime import date, datetime, timezone
 
 from app.db.supabase import get_db
+from app.core.dev_accounts import is_unlimited
 
 DEFAULT_DAILY_LIMIT = 10000
 LIMIT_MESSAGE = "You have reached your daily limit. Come back tomorrow to continue learning."
@@ -35,6 +36,9 @@ def _period_start(mode: str) -> str:
 
 async def get_usage(user_id: str) -> dict:
     """Returns {used, limit, mode, remaining, resets_at}."""
+    if is_unlimited(user_id=user_id):
+        return {"used": 0, "limit": -1, "remaining": -1, "mode": "unlimited",
+                "resets_at": "never", "unlimited": True}
     db = await get_db()
     mode, limit = await _get_settings(db)
     used = 0
@@ -65,12 +69,14 @@ async def get_usage(user_id: str) -> dict:
 
 
 async def is_exhausted(user_id: str) -> bool:
+    if is_unlimited(user_id=user_id):
+        return False
     usage = await get_usage(user_id)
     return usage["used"] >= usage["limit"]
 
 
 async def add_usage(user_id: str, tokens: int) -> None:
-    if tokens <= 0:
+    if tokens <= 0 or is_unlimited(user_id=user_id):
         return
     try:
         db = await get_db()
