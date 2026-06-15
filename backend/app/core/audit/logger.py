@@ -23,7 +23,10 @@ async def log_query(event: AuditEvent) -> None:
         logger.error("Session upsert failed: %s", exc)
 
     try:
-        await db.table("query_audit_log").insert(event.model_dump()).execute()
+        data = event.model_dump()
+        if not data.get("id"):
+            data.pop("id", None)  # let the DB generate one
+        await db.table("query_audit_log").insert(data).execute()
     except Exception as exc:
         # Audit failure must never surface to the user — log and continue
         logger.error("Audit log write failed: %s", exc)

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, TouchableOpacity, Share } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Share, TextInput } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
@@ -61,6 +61,9 @@ export function MessageBubble({ message, onRefresh }: Props) {
   const [copied, setCopied] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [vote, setVote] = useState<'up' | 'down' | null>(null);
+  const [showComment, setShowComment] = useState(false);
+  const [comment, setComment] = useState('');
+  const [thanks, setThanks] = useState(false);
 
   if (isUser) {
     return (
@@ -108,10 +111,32 @@ export function MessageBubble({ message, onRefresh }: Props) {
     });
   }
 
+  function voteOpts(comment?: string) {
+    return { auditId: message.auditId, sessionId: useChatStore.getState().sessionId, comment };
+  }
+
+  function flashThanks() {
+    setThanks(true);
+    setTimeout(() => setThanks(false), 2000);
+  }
+
   async function rate(dir: 'up' | 'down') {
     setVote(dir);
-    const sid = useChatStore.getState().sessionId;
-    if (sid) rateAnswer(sid, dir).catch(() => {});
+    // Record the vote immediately (upsert — safe to overwrite with a comment).
+    rateAnswer(voteOpts(), dir).catch(() => {});
+    if (dir === 'down') {
+      setShowComment(true); // invite an optional "what went wrong?"
+    } else {
+      setShowComment(false);
+      flashThanks();
+    }
+  }
+
+  async function submitComment() {
+    const text = comment.trim();
+    setShowComment(false);
+    rateAnswer(voteOpts(text || undefined), 'down').catch(() => {});
+    flashThanks();
   }
 
   // AI responses render full width on the background (Claude.ai style).
@@ -130,6 +155,29 @@ export function MessageBubble({ message, onRefresh }: Props) {
           <Action icon={vote === 'up' ? 'thumb-up' : 'thumb-up-outline'} active={vote === 'up'} onPress={() => rate('up')} />
           <Action icon={vote === 'down' ? 'thumb-down' : 'thumb-down-outline'} active={vote === 'down'} onPress={() => rate('down')} />
           {onRefresh && <Action icon="refresh" onPress={() => onRefresh(message)} />}
+          {thanks && <Text style={styles.thanks}>Thanks for the feedback</Text>}
+        </View>
+      )}
+
+      {showComment && (
+        <View style={styles.commentBox}>
+          <TextInput
+            style={styles.commentInput}
+            placeholder="What went wrong? (optional)"
+            placeholderTextColor={COLORS.textSecondary}
+            value={comment}
+            onChangeText={setComment}
+            multiline
+            autoFocus
+          />
+          <View style={styles.commentRow}>
+            <TouchableOpacity onPress={() => setShowComment(false)} hitSlop={6}>
+              <Text style={styles.commentSkip}>Skip</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.commentSend} onPress={submitComment} hitSlop={6}>
+              <Text style={styles.commentSendText}>Send</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
     </View>
@@ -153,6 +201,16 @@ const styles = StyleSheet.create({
   userText: { color: '#fff', fontSize: 15, lineHeight: 22 },
   aiContainer: { marginVertical: 8, alignSelf: 'stretch', width: '100%' },
   actions: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 8 },
+  thanks: { fontSize: 12, color: COLORS.primary, fontWeight: '600', marginLeft: 8 },
+  commentBox: {
+    marginTop: 8, backgroundColor: COLORS.secondary, borderRadius: 12, padding: 10,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.border,
+  },
+  commentInput: { fontSize: 14, color: COLORS.text, minHeight: 36, maxHeight: 100, paddingVertical: 2 },
+  commentRow: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 18, marginTop: 6 },
+  commentSkip: { fontSize: 13, color: COLORS.textSecondary, fontWeight: '600' },
+  commentSend: { backgroundColor: COLORS.primary, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 6 },
+  commentSendText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   actionBtn: {
     width: 34, height: 34, borderRadius: 17,
     alignItems: 'center', justifyContent: 'center',

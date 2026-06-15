@@ -176,8 +176,8 @@ export default function ChatScreen() {
         onImage: (image) => {
           setMessageImage(aiId, image);
         },
-        onMeta: (citations, emergency) => {
-          finaliseStream(aiId, citations as any, emergency);
+        onMeta: (citations, emergency, _sid, auditId) => {
+          finaliseStream(aiId, citations as any, emergency, auditId);
         },
         onDone: () => {
           if (finished) return;

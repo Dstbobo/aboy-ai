@@ -4,6 +4,7 @@ import { Text, TextInput, Button } from 'react-native-paper';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api } from '@/services/api';
+import { recordEvent } from '@/services/usage.service';
 import { useAuthStore } from '@/stores/auth.store';
 import { ROLE_LABELS, type UserRole } from '@/constants/roles';
 import { COLORS } from '@/constants/theme';
@@ -92,6 +93,7 @@ export default function OnboardingDetailsScreen() {
     } catch {
       // non-fatal — editable later in Settings
     }
+    recordEvent('onboarding_complete');
     await completeOnboarding();
     setSaving(false);
     router.replace('/(clinical)/chat');

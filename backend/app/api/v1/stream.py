@@ -132,7 +132,9 @@ async def _event_generator(
             pass
 
     citations = _build_citations(reranked, web_results)
-    yield f"data: {json.dumps({'type': 'meta', 'citations': [c.model_dump() for c in citations], 'emergency_triggered': emergency_triggered, 'session_id': session_id})}\n\n"
+    # Stable id for THIS answer so the client can attach feedback to it.
+    audit_id = str(uuid.uuid4())
+    yield f"data: {json.dumps({'type': 'meta', 'citations': [c.model_dump() for c in citations], 'emergency_triggered': emergency_triggered, 'session_id': session_id, 'audit_id': audit_id})}\n\n"
     yield "data: [DONE]\n\n"
 
     latency_ms = int((time.monotonic() - start) * 1000)
@@ -146,6 +148,7 @@ async def _event_generator(
     )
 
     fire_and_forget(log_query(AuditEvent(
+        id=audit_id,
         user_id=user.user_id, user_role=user.role, session_id=session_id,
         query_raw=request.query, query_enhanced=None, query_classification=f"tier{cls.tier}",
         sources_retrieved=[{"id": c.get("id"), "similarity": c.get("similarity")} for c in reranked],

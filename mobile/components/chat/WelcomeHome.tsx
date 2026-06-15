@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { getWelcome, type Welcome } from '@/services/intelligence.service';
+import { recordEvent } from '@/services/usage.service';
 import { scheduleStreakNudges } from '@/services/nudges';
 import { COLORS } from '@/constants/theme';
 
@@ -17,6 +18,7 @@ export function WelcomeHome({ onPick }: { onPick: (prompt: string) => void }) {
 
   useEffect(() => {
     let alive = true;
+    recordEvent('welcome_shown');
     getWelcome()
       .then((res) => {
         if (!alive) return;
@@ -66,7 +68,7 @@ export function WelcomeHome({ onPick }: { onPick: (prompt: string) => void }) {
 
       <View style={styles.cards}>
         {(w?.cards ?? []).map((c, i) => (
-          <TouchableOpacity key={i} style={styles.card} activeOpacity={0.85} onPress={() => onPick(c.prompt)}>
+          <TouchableOpacity key={i} style={styles.card} activeOpacity={0.85} onPress={() => { recordEvent('starter_tapped'); onPick(c.prompt); }}>
             <View style={styles.cardIcon}>
               <MaterialCommunityIcons name={c.icon as any} size={20} color={COLORS.primary} />
             </View>

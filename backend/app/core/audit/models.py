@@ -2,6 +2,9 @@ from pydantic import BaseModel
 
 
 class AuditEvent(BaseModel):
+    # Generated at request time so the exact answer can be returned to the
+    # client (in the stream meta / response) and used to anchor feedback.
+    id: str | None = None
     user_id: str
     user_role: str
     session_id: str | None

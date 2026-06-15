@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     # Redis (cache + rate limiting)
     redis_url: str = ""
 
+    # Optional Discord webhook for actionable dislike-with-comment alerts.
+    discord_feedback_webhook: str = ""
+
     # RAG config
     # Voyage query/document cosine scores for relevant chunks land ~0.5-0.65,
     # noise ~0.25-0.35. 0.65 filtered out even exact-topic matches (giving empty

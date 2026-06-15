@@ -16,6 +16,59 @@ async def list_users(user: AuthenticatedUser = Depends(get_current_user)) -> lis
     return result.data or []
 
 
+@router.get("/feedback")
+async def feedback_report(user: AuthenticatedUser = Depends(get_current_user)) -> dict:
+    """Quality signal: vote totals + recent dislikes with their answer context."""
+    require_admin(user)
+    db = await get_db()
+    votes = (await db.table("query_feedback").select("rating, audit_log_id, feedback_text, created_at")
+             .order("created_at", desc=True).limit(500).execute()).data or []
+    up = sum(1 for v in votes if (v.get("rating") or 0) >= 4)
+    down = sum(1 for v in votes if (v.get("rating") or 0) <= 2)
+
+    # Hydrate recent dislikes with the question + model so they're actionable.
+    recent_down = [v for v in votes if (v.get("rating") or 0) <= 2][:25]
+    items = []
+    for v in recent_down:
+        ctx = (await db.table("query_audit_log").select("query_raw, model_used")
+               .eq("id", v["audit_log_id"]).limit(1).execute()).data
+        q = (ctx[0]["query_raw"] if ctx else "")[:160]
+        items.append({
+            "audit_id": v["audit_log_id"], "question": q,
+            "model": ctx[0]["model_used"] if ctx else None,
+            "comment": v.get("feedback_text"), "at": v.get("created_at"),
+        })
+    total = up + down
+    return {
+        "up": up, "down": down, "total": total,
+        "satisfaction_pct": round(100 * up / total, 1) if total else None,
+        "recent_dislikes": items,
+    }
+
+
+@router.get("/funnel")
+async def funnel_report(user: AuthenticatedUser = Depends(get_current_user)) -> dict:
+    """Activation funnel: signups + client step events + first-question conversion."""
+    require_admin(user)
+    db = await get_db()
+    signups = len((await db.table("user_profiles").select("id").execute()).data or [])
+    asked = len({r["user_id"] for r in (await db.table("query_audit_log").select("user_id").execute()).data or []})
+    steps = (await db.table("funnel_events").select("step, count").execute()).data or []
+    by_step: dict[str, int] = {}
+    for s in steps:
+        by_step[s["step"]] = by_step.get(s["step"], 0) + s["count"]
+
+    def pct(n: int) -> float:
+        return round(100 * n / signups, 1) if signups else 0.0
+
+    return {
+        "signups": signups,
+        "asked_first_question_users": asked,
+        "activation_rate_pct": pct(asked),
+        "step_events": by_step,
+    }
+
+
 @router.get("/image-stats")
 async def image_stats(user: AuthenticatedUser = Depends(get_current_user)) -> dict:
     """Image reliability + coverage report (drives ongoing curation)."""

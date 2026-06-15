@@ -7,7 +7,7 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000';
 export interface StreamHandlers {
   onStart?: (sessionId: string, tier: number) => void;
   onToken: (text: string) => void;
-  onMeta?: (citations: Citation[], emergency: boolean, sessionId: string) => void;
+  onMeta?: (citations: Citation[], emergency: boolean, sessionId: string, auditId?: string) => void;
   onImage?: (image: MedicalImage) => void;
   onDone: () => void;
   onError: (e: any) => void;
@@ -71,7 +71,7 @@ export async function streamQuery(
         if (msg.type === 'start') h.onStart?.(msg.session_id, msg.tier);
         else if (msg.type === 'text') h.onToken(msg.content);
         else if (msg.type === 'image') h.onImage?.(msg.image as MedicalImage);
-        else if (msg.type === 'meta') h.onMeta?.(msg.citations ?? [], !!msg.emergency_triggered, msg.session_id);
+        else if (msg.type === 'meta') h.onMeta?.(msg.citations ?? [], !!msg.emergency_triggered, msg.session_id, msg.audit_id);
       } catch {
         // ignore malformed partial
       }

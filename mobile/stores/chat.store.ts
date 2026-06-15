@@ -29,6 +29,7 @@ export interface Message {
   timestamp: Date;
   isStreaming?: boolean;
   image?: MedicalImage | null;
+  auditId?: string | null;   // server id of this answer, used to anchor feedback
 }
 
 export interface LoadedMessage {
@@ -46,7 +47,7 @@ interface ChatState {
   addAssistantMessage: (id: string, content: string, citations: Citation[], emergency: boolean) => void;
   startStreaming: (id: string) => void;
   appendStream: (chunk: string) => void;
-  finaliseStream: (id: string, citations: Citation[], emergency: boolean) => void;
+  finaliseStream: (id: string, citations: Citation[], emergency: boolean, auditId?: string | null) => void;
   setMessageImage: (id: string, image: MedicalImage) => void;
   setSession: (sessionId: string) => void;
   setLoading: (loading: boolean) => void;
@@ -101,10 +102,10 @@ export const useChatStore = create<ChatState>()(
         });
       },
 
-      finaliseStream: (id, citations, emergency) => {
+      finaliseStream: (id, citations, emergency, auditId) => {
         set((s) => ({
           messages: s.messages.map((m) =>
-            m.id === id ? { ...m, citations, emergency_triggered: emergency, isStreaming: false } : m,
+            m.id === id ? { ...m, citations, emergency_triggered: emergency, isStreaming: false, auditId: auditId ?? m.auditId } : m,
           ),
           isLoading: false,
           streamingContent: '',
