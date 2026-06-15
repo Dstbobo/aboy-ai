@@ -34,7 +34,7 @@ _TIMEOUT = 5.0
 _TTL_HIT = 30 * 24 * 60 * 60
 _TTL_MISS = 24 * 60 * 60
 # Bump to invalidate stale Redis image entries (non-English / low-res variants).
-_CACHE_VERSION = "v6"
+_CACHE_VERSION = "v7"
 
 # ── Visual-concept detection ───────────────────────────────────────────────
 # Each entry: a trigger (matched as a whole word, case-insensitive) → the search
@@ -382,11 +382,13 @@ async def _db_get(concept: str) -> dict | None | bool:
         res = await db.table("medical_images").select("*").eq("concept", concept).maybe_single().execute()
         if res and res.data:
             row = res.data
-            if not row.get("found"):
+            # Not found, or license-incompatible (servable=false) → show nothing.
+            if not row.get("found") or row.get("servable") is False:
                 return {}
             return {
                 "url": row["url"], "title": row.get("title") or "Medical illustration",
                 "source": row.get("source") or "", "page_url": row.get("page_url") or "",
+                "license": row.get("license") or "", "attribution": row.get("attribution") or "",
             }
     except Exception as exc:
         logger.warning("medical_images read failed: %s", exc)

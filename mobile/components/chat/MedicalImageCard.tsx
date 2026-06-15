@@ -14,13 +14,13 @@ import { COLORS } from '@/constants/theme';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? '';
 
-// Load images through our backend proxy. The native image loader sends a
-// generic User-Agent that Wikimedia/PubChem reject (403/429) for hotlinking,
-// so direct URLs fail to render; the proxy fetches with a proper User-Agent
-// from a host we control.
-function proxied(url: string): string {
+// Resolve through our backend: the primary path 302-redirects to our owned
+// Supabase asset; the fallback path (fb=1) streams the upstream source through
+// the proxy if the owned asset ever fails to load.
+function resolveUrl(url: string, fallback = false): string {
   if (!url || !API_URL) return url;
-  return `${API_URL}/api/v1/img?u=${encodeURIComponent(url)}`;
+  const fb = fallback ? '&fb=1' : '';
+  return `${API_URL}/api/v1/img?u=${encodeURIComponent(url)}${fb}`;
 }
 
 // Hard cap on how long we'll wait for an image before giving up — guarantees
@@ -55,7 +55,8 @@ export function MedicalImageCard({ image }: { image: MedicalImage }) {
 
   if (status === 'failed' || !image?.url) return null; // image or nothing — clean
 
-  const uri = useProxy ? proxied(image.url) : image.url;
+  // Owned Supabase asset first (via resolve redirect); upstream proxy fallback.
+  const uri = useProxy ? resolveUrl(image.url) : resolveUrl(image.url, true);
   const cardWidth = width - 32;
 
   const onLoad = () => {
@@ -97,12 +98,19 @@ export function MedicalImageCard({ image }: { image: MedicalImage }) {
       </TouchableOpacity>
 
       {loaded && (
-        <View style={styles.caption}>
-          <MaterialCommunityIcons name="image-outline" size={13} color={COLORS.textSecondary} />
-          <Text style={styles.captionText} numberOfLines={2}>
-            <Text style={styles.captionSource}>{image.source}</Text>
-            {image.title ? ` · ${image.title}` : ''}
-          </Text>
+        <View>
+          <View style={styles.caption}>
+            <MaterialCommunityIcons name="image-outline" size={13} color={COLORS.textSecondary} />
+            <Text style={styles.captionText} numberOfLines={2}>
+              <Text style={styles.captionSource}>{image.source}</Text>
+              {image.title ? ` · ${image.title}` : ''}
+            </Text>
+          </View>
+          {(image.license || image.attribution) && (
+            <Text style={styles.attribution} numberOfLines={1}>
+              {[image.attribution, image.license].filter(Boolean).join(' · ')}
+            </Text>
+          )}
         </View>
       )}
 
@@ -144,6 +152,7 @@ const styles = StyleSheet.create({
   caption: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6, paddingHorizontal: 2 },
   captionText: { flex: 1, fontSize: 12, color: COLORS.textSecondary },
   captionSource: { fontWeight: '700', color: COLORS.textSecondary },
+  attribution: { fontSize: 10.5, color: COLORS.textSecondary, opacity: 0.7, marginTop: 2, paddingHorizontal: 2 },
   // White fullscreen backdrop: transparent diagrams + dark labels stay legible
   // (a black backdrop made the labels disappear).
   fsBackdrop: { flex: 1, backgroundColor: '#ffffff', alignItems: 'center', justifyContent: 'center' },

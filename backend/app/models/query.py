@@ -31,6 +31,8 @@ class MedicalImage(BaseModel):
     title: str
     source: str
     page_url: str = ""
+    license: str = ""
+    attribution: str = ""
 
 
 class QueryResponse(BaseModel):

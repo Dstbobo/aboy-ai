@@ -16,6 +16,8 @@ export interface MedicalImage {
   title: string;
   source: string;
   page_url?: string;
+  license?: string;
+  attribution?: string;
 }
 
 export interface Message {
