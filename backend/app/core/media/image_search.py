@@ -439,16 +439,54 @@ async def resolve_concept(concept: str, *, allow_live: bool = True) -> dict | No
     return image
 
 
+# Visual intent the detector missed → coverage backlog ("show me X", etc.).
+_VISUAL_INTENT = re.compile(
+    r"\b(?:show me|what does .* look like|looks? like|diagram of|picture of|"
+    r"image of|illustration of|photo of|draw(?:\s+me)?|labell?ed|anatomy of|"
+    r"structure of)\b",
+    re.IGNORECASE,
+)
+
+
+async def _log_resolution(concept: str, served: bool) -> None:
+    try:
+        db = await get_db()
+        await db.rpc("bump_resolution_stat", {
+            "p_concept": concept, "p_outcome": "served" if served else "no_image",
+        }).execute()
+    except Exception:
+        pass
+
+
+async def _log_coverage_gap(question: str) -> None:
+    try:
+        norm = re.sub(r"\s+", " ", question.strip().lower())[:200]
+        db = await get_db()
+        await db.rpc("bump_coverage_gap", {"p_norm": norm, "p_sample": question[:300]}).execute()
+    except Exception:
+        pass
+
+
 async def find_medical_image(question: str, role: str) -> dict | None:
     """Detect a visual medical concept and return one illustration, or None.
 
     Lookup order: Redis → pre-fetched `medical_images` DB table → live fetch
     (Wikimedia/PubChem) which is then stored in the DB for instant reuse.
+    Records lightweight observability (resolution outcome / coverage gaps).
     """
+    from app.utils.background import fire_and_forget
+
     query = detect_visual_query(question, role)
     if not query:
+        # Detector found no concept — if the user clearly wanted a visual, log
+        # it so curation can add the concept they actually want.
+        if _VISUAL_INTENT.search(question):
+            fire_and_forget(_log_coverage_gap(question))
         return None
-    return await resolve_concept(query)
+
+    image = await resolve_concept(query)
+    fire_and_forget(_log_resolution(query, image is not None))
+    return image
 
 
 def all_prefetch_concepts() -> list[str]:
