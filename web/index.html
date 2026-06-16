@@ -3,43 +3,120 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Aboy AI — The cited medical AI assistant for every hospital role</title>
-<meta name="description" content="Aboy AI is an educational healthcare AI assistant: cited answers from verified sources, automatic medical diagrams, voice & camera study modes, and a personalised learning loop — for students, professionals and hospital staff." />
-<meta property="og:title" content="Aboy AI — cited medical AI assistant" />
-<meta property="og:description" content="Cited answers, real medical diagrams, voice & camera, personalised learning — for every role in the hospital." />
+
+<!-- ── Primary SEO ─────────────────────────────────────────── -->
+<title>Aboy AI — Cited Medical AI Assistant for Students &amp; Healthcare Professionals</title>
+<meta name="description" content="Aboy AI is a cited medical AI assistant for healthcare students, doctors, nurses, pharmacists and hospital staff. Get source-cited answers from WHO, CDC, NICE, PubMed &amp; StatPearls, automatic medical diagrams, and voice study modes. Free beta." />
+<meta name="keywords" content="medical AI assistant, AI for medical students, cited medical AI, healthcare AI study tool, AI for nurses, AI for pharmacists, medical study app, anatomy diagrams AI, clinical AI assistant" />
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+<meta name="author" content="Aboy AI" />
+<meta name="theme-color" content="#1f9d8b" />
+<link rel="canonical" href="https://aboyai.com/" />
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="/favicon.svg" />
+
+<!-- ── Open Graph / Twitter ────────────────────────────────── -->
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Aboy AI" />
+<meta property="og:title" content="Aboy AI — Cited Medical AI Assistant for Students &amp; Healthcare Professionals" />
+<meta property="og:description" content="Source-cited medical answers, automatic diagrams, and voice study modes — for students, doctors, nurses, pharmacists and hospital staff. Free beta." />
+<meta property="og:url" content="https://aboyai.com/" />
+<meta property="og:image" content="https://szsdvkziqskrfveuemsi.supabase.co/storage/v1/object/public/medical-assets/human-heart-anatomy-diagram.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Aboy AI — Cited Medical AI Assistant" />
+<meta name="twitter:description" content="Source-cited medical answers, real diagrams, and voice study — for every role in the hospital. Free beta." />
+<meta name="twitter:image" content="https://szsdvkziqskrfveuemsi.supabase.co/storage/v1/object/public/medical-assets/human-heart-anatomy-diagram.png" />
+
+<link rel="preload" as="style" href="/style.css" />
 <link rel="stylesheet" href="/style.css" />
+
+<!-- ── Structured data (JSON-LD) ───────────────────────────── -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://aboyai.com/#org",
+      "name": "Aboy AI",
+      "url": "https://aboyai.com/",
+      "logo": "https://aboyai.com/favicon.svg",
+      "email": "daniel11dst@gmail.com",
+      "description": "Educational healthcare AI assistant providing source-cited medical answers, diagrams and voice study tools."
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://aboyai.com/#website",
+      "url": "https://aboyai.com/",
+      "name": "Aboy AI",
+      "publisher": { "@id": "https://aboyai.com/#org" },
+      "inLanguage": "en"
+    },
+    {
+      "@type": "MobileApplication",
+      "name": "Aboy AI",
+      "operatingSystem": "Android, iOS",
+      "applicationCategory": "MedicalApplication",
+      "applicationSubCategory": "Educational",
+      "description": "A cited medical AI assistant for healthcare students and professionals: source-cited answers from WHO, CDC, NICE, PubMed and StatPearls, automatic medical diagrams, and voice and camera study modes.",
+      "url": "https://aboyai.com/",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "publisher": { "@id": "https://aboyai.com/#org" }
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        { "@type": "Question", "name": "What is Aboy AI?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Aboy AI is a cited medical AI assistant for healthcare students, doctors, nurses, pharmacists, educators and hospital staff. It answers clinical and study questions with source citations, shows relevant medical diagrams, and adapts to your role and level." } },
+        { "@type": "Question", "name": "Does Aboy AI cite its sources?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes. Every answer is grounded in verified medical sources such as WHO, CDC, NICE, PubMed and StatPearls, with inline citations. It will not invent references — if a source is not available it simply answers without citing one." } },
+        { "@type": "Question", "name": "Who is Aboy AI for?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Medical and nursing students, doctors, nurses, pharmacists, lab technicians, educators, researchers, and non-clinical hospital staff such as records, reception and ward operations. Each role gets tailored answers and visuals." } },
+        { "@type": "Question", "name": "Is Aboy AI free?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes, Aboy AI is free to use during the beta." } },
+        { "@type": "Question", "name": "Can Aboy AI show medical diagrams?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes. For visual topics like anatomy, ECGs, histology and drug structures, Aboy AI automatically shows a relevant, English-labelled medical diagram with proper licensing and attribution." } },
+        { "@type": "Question", "name": "Does Aboy AI support voice and camera?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes. You can ask questions by voice, hold a spoken conversation, point your camera at a problem, and have answers read back to you hands-free." } },
+        { "@type": "Question", "name": "Is Aboy AI a medical device?",
+          "acceptedAnswer": { "@type": "Answer", "text": "No. Aboy AI is an educational tool, not a medical device. It does not diagnose, treat or prescribe and is not a substitute for professional clinical judgment, supervision or institutional protocols." } }
+      ]
+    }
+  ]
+}
+</script>
 </head>
 <body>
 
 <nav class="nav">
   <div class="wrap">
-    <div class="logo">A</div>
+    <a href="/" class="logo" aria-label="Aboy AI home">A</a>
     <div class="name">Aboy AI</div>
     <div class="links">
       <a class="hide-sm" href="#features">Features</a>
       <a class="hide-sm" href="#roles">Who it's for</a>
-      <a class="hide-sm" href="#how">How it works</a>
+      <a class="hide-sm" href="#faq">FAQ</a>
       <a class="cta" href="mailto:daniel11dst@gmail.com?subject=Aboy%20AI%20beta%20access">Get beta access</a>
     </div>
   </div>
 </nav>
 
 <!-- HERO -->
-<section class="hero">
+<header class="hero">
   <div class="wrap">
     <div>
       <span class="eyebrow">EDUCATIONAL HEALTHCARE AI</span>
-      <h1>The cited medical AI assistant for <span>every role</span> in the hospital</h1>
-      <p class="sub">Ask any clinical or study question and get a clear, <strong>source-cited</strong> answer — with a real <strong>medical diagram</strong>, optional <strong>voice &amp; camera</strong>, and a learning experience that adapts to you. Built for students, professionals and hospital staff.</p>
+      <h1>The cited medical AI assistant for students &amp; healthcare professionals</h1>
+      <p class="sub">Ask any clinical or study question and get a clear, <strong>source-cited answer</strong> from verified sources like WHO, CDC, NICE, PubMed and StatPearls — with a real <strong>medical diagram</strong>, optional <strong>voice &amp; camera</strong>, and learning that adapts to your role. Built for medical students, doctors, nurses, pharmacists and hospital staff.</p>
       <div class="btns">
         <a class="btn primary" href="mailto:daniel11dst@gmail.com?subject=Aboy%20AI%20beta%20access">Request beta access</a>
         <a class="btn ghost" href="#how">See how it works</a>
       </div>
-      <p class="note">Educational tool — not a medical device. Verify clinical decisions against current guidelines.</p>
+      <p class="note">Free during beta · Educational tool, not a medical device.</p>
     </div>
 
     <!-- Phone mockup: a real sample (cited answer + a real diagram we host) -->
-    <div class="phone" aria-label="App preview">
+    <div class="phone" aria-label="Aboy AI app preview showing a cited answer and a labelled heart diagram">
       <div class="screen">
         <div class="bar"><span class="dot">A</span> Aboy AI</div>
         <div class="body">
@@ -48,7 +125,9 @@
             The heart is a four-chambered muscular organ. The <b>right atrium</b> and <b>right ventricle</b> pump deoxygenated blood to the lungs; the <b>left atrium</b> and <b>left ventricle</b> pump oxygenated blood to the body via the <b>aorta</b>.
             <br /><span class="cite">Source · StatPearls</span>
             <div class="diagram">
-              <img src="https://szsdvkziqskrfveuemsi.supabase.co/storage/v1/object/public/medical-assets/human-heart-anatomy-diagram.png" alt="Labelled diagram of the human heart" loading="lazy" />
+              <img src="https://szsdvkziqskrfveuemsi.supabase.co/storage/v1/object/public/medical-assets/human-heart-anatomy-diagram.png"
+                   alt="Labelled anatomy diagram of the human heart showing the four chambers and aorta"
+                   width="280" height="210" loading="eager" fetchpriority="high" />
               <div class="cap">Wikimedia Commons · CC BY-SA 4.0</div>
             </div>
           </div>
@@ -56,58 +135,60 @@
       </div>
     </div>
   </div>
-</section>
+</header>
+
+<main>
 
 <!-- FEATURES -->
 <section class="block alt" id="features">
   <div class="wrap center">
-    <h2 class="sec">Everything you need to study and work smarter</h2>
-    <p class="lead">Trustworthy answers, real visuals, and a learning loop that remembers where you are.</p>
+    <h2 class="sec">A medical AI built for trust, visuals and real study</h2>
+    <p class="lead">Trustworthy cited answers, real medical diagrams, and a learning loop that remembers where you are.</p>
   </div>
   <div class="wrap">
     <div class="grid3">
-      <div class="feat">
+      <article class="feat">
         <div class="ic">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#157f70" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#157f70" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 12l2 2 4-4"/><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
         </div>
         <h3>Cited, verified answers</h3>
-        <p>Every answer is grounded in verified sources (WHO, CDC, NICE, PubMed, StatPearls). It never invents references — if a source isn't there, it won't cite one.</p>
-      </div>
-      <div class="feat">
+        <p>Every answer is grounded in verified sources — WHO, CDC, NICE, PubMed and StatPearls. Aboy never invents references; if a source isn't there, it won't cite one.</p>
+      </article>
+      <article class="feat">
         <div class="ic">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#157f70" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#157f70" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>
         </div>
         <h3>Real medical diagrams</h3>
-        <p>Anatomy, ECGs, histology and drug structures appear automatically — sharp, English-labelled, licensed and attributed. A real picture, or none at all.</p>
-      </div>
-      <div class="feat">
+        <p>Anatomy, ECGs, histology and drug structures appear automatically — sharp, English-labelled, licensed and attributed. A real diagram, or none at all.</p>
+      </article>
+      <article class="feat">
         <div class="ic">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#157f70" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><path d="M12 19v4"/></svg>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#157f70" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><path d="M12 19v4"/></svg>
         </div>
         <h3>Voice &amp; camera study</h3>
         <p>Ask out loud, hold a conversation, or point your camera at a problem. Answers can be read back to you, hands-free.</p>
-      </div>
-      <div class="feat">
+      </article>
+      <article class="feat">
         <div class="ic">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#157f70" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l3-3 3 3 5-6"/></svg>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#157f70" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 14l3-3 3 3 5-6"/></svg>
         </div>
         <h3>Personalised learning</h3>
         <p>Aboy learns the topics you study, where you struggle and what you've mastered — then adjusts depth and builds on what you already know.</p>
-      </div>
-      <div class="feat">
+      </article>
+      <article class="feat">
         <div class="ic">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#157f70" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2 6h6l-5 4 2 6-5-4-5 4 2-6-5-4h6z"/></svg>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#157f70" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l2 6h6l-5 4 2 6-5-4-5 4 2-6-5-4h6z"/></svg>
         </div>
         <h3>Streaks &amp; daily goals</h3>
-        <p>An intelligent welcome, daily streaks and gentle nudges keep you coming back and turn study into a habit.</p>
-      </div>
-      <div class="feat">
+        <p>An intelligent welcome, daily streaks and gentle reminders keep you coming back and turn study into a habit.</p>
+      </article>
+      <article class="feat">
         <div class="ic">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#157f70" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#157f70" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
         </div>
         <h3>Safe by design</h3>
-        <p>Education-only, with emergency detection and clear limits. It never diagnoses, prescribes, or replaces your supervisors.</p>
-      </div>
+        <p>Education-only, with emergency detection and clear limits. Aboy never diagnoses, prescribes, or replaces your supervisors.</p>
+      </article>
     </div>
   </div>
 </section>
@@ -115,7 +196,7 @@
 <!-- ROLES -->
 <section class="block" id="roles">
   <div class="wrap center">
-    <h2 class="sec">Built for everyone in the hospital</h2>
+    <h2 class="sec">A medical AI assistant for everyone in the hospital</h2>
     <p class="lead">Each role gets answers, examples and visuals tuned to their work — not a generic chatbot.</p>
     <div class="roles">
       <span class="role">🩺 Medical &amp; nursing students</span>
@@ -133,14 +214,33 @@
 <!-- HOW IT WORKS -->
 <section class="block alt" id="how">
   <div class="wrap center">
-    <h2 class="sec">How it works</h2>
+    <h2 class="sec">How Aboy AI works</h2>
     <p class="lead">From question to a trustworthy, illustrated answer in seconds.</p>
   </div>
   <div class="wrap">
     <div class="steps">
       <div class="step"><div class="n">1</div><h3>Ask anything</h3><p>Type, speak, or snap a photo. Pick your role once and Aboy tailors everything to your level.</p></div>
-      <div class="step"><div class="n">2</div><h3>Get a cited answer</h3><p>Aboy retrieves from verified medical sources and streams a clear answer with inline citations — and a relevant diagram when it helps.</p></div>
+      <div class="step"><div class="n">2</div><h3>Get a cited answer</h3><p>Aboy retrieves from verified medical sources and streams a clear answer with inline citations — plus a relevant diagram when it helps.</p></div>
       <div class="step"><div class="n">3</div><h3>Learn &amp; come back</h3><p>Your progress, streaks and weak areas are tracked so each session builds on the last.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section class="block" id="faq">
+  <div class="wrap center">
+    <h2 class="sec">Frequently asked questions</h2>
+    <p class="lead">Everything students and clinicians ask about Aboy AI.</p>
+  </div>
+  <div class="wrap">
+    <div class="faq">
+      <details><summary>What is Aboy AI?</summary><p>Aboy AI is a cited medical AI assistant for healthcare students, doctors, nurses, pharmacists, educators and hospital staff. It answers clinical and study questions with source citations, shows relevant medical diagrams, and adapts to your role and level.</p></details>
+      <details><summary>Does Aboy AI cite its sources?</summary><p>Yes. Every answer is grounded in verified medical sources such as WHO, CDC, NICE, PubMed and StatPearls, with inline citations. It will not invent references — if a source isn't available it simply answers without citing one.</p></details>
+      <details><summary>Who is Aboy AI for?</summary><p>Medical and nursing students, doctors, nurses, pharmacists, lab technicians, educators, researchers, and non-clinical hospital staff such as records, reception and ward operations. Each role gets tailored answers and visuals.</p></details>
+      <details><summary>Is Aboy AI free?</summary><p>Yes, Aboy AI is free to use during the beta.</p></details>
+      <details><summary>Can Aboy AI show medical diagrams?</summary><p>Yes. For visual topics like anatomy, ECGs, histology and drug structures, Aboy AI automatically shows a relevant, English-labelled medical diagram with proper licensing and attribution.</p></details>
+      <details><summary>Does Aboy AI support voice and camera?</summary><p>Yes. You can ask questions by voice, hold a spoken conversation, point your camera at a problem, and have answers read back to you hands-free.</p></details>
+      <details><summary>Is Aboy AI a medical device?</summary><p>No. Aboy AI is an educational tool, not a medical device. It does not diagnose, treat or prescribe and is not a substitute for professional clinical judgment, supervision or institutional protocols.</p></details>
     </div>
   </div>
 </section>
@@ -153,6 +253,8 @@
     </div>
   </div>
 </section>
+
+</main>
 
 <footer>
   <div class="wrap">

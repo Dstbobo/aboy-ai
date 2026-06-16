@@ -125,3 +125,12 @@ section.block.alt .feat { background: var(--bg); }
 .step .n { width:30px;height:30px;border-radius:9px;background:var(--green);color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;margin-bottom:10px; }
 .step h3{ font-size:15.5px; margin:0 0 5px; } .step p{ font-size:13.5px; color:var(--muted); margin:0; }
 .safety { background:#fff7ed; border:1px solid #fcd9a8; border-radius:14px; padding:18px 20px; color:#7a4a12; font-size:14.5px; }
+
+/* FAQ accordion */
+.faq { max-width: 720px; margin: 0 auto; }
+.faq details { background:#fff; border:1px solid var(--border); border-radius:12px; padding:0 16px; margin-bottom:10px; }
+.faq summary { cursor:pointer; font-weight:700; font-size:15.5px; padding:15px 0; list-style:none; position:relative; padding-right:28px; }
+.faq summary::-webkit-details-marker { display:none; }
+.faq summary::after { content:"+"; position:absolute; right:2px; top:13px; font-size:20px; color:var(--green); font-weight:400; }
+.faq details[open] summary::after { content:"−"; }
+.faq details p { margin:0 0 16px; color:var(--muted); font-size:14.5px; }

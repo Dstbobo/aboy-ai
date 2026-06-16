@@ -1,10 +1,10 @@
-# Aboy AI — Netlify serves the static legal site in /web.
+# Aboy AI — Netlify serves the static marketing + legal site in /web.
 # This repo is an Expo/React Native app + FastAPI backend (no web build),
 # so Netlify must NOT try to build — it just publishes the static /web folder.
 
 [build]
   publish = "web"
-  command = "echo 'Static legal site — no build step needed'"
+  command = "echo 'Static site — no build step needed'"
 
 # Clean URLs so /privacy and /terms work (not just the .html paths).
 [[redirects]]
@@ -16,3 +16,23 @@
   from = "/terms"
   to = "/terms.html"
   status = 200
+
+# ── Security + performance headers (helps Core Web Vitals & trust) ──
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "SAMEORIGIN"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "geolocation=(), microphone=(), camera=()"
+
+# Long-cache immutable static assets.
+[[headers]]
+  for = "/style.css"
+  [headers.values]
+    Cache-Control = "public, max-age=86400, must-revalidate"
+
+[[headers]]
+  for = "/favicon.svg"
+  [headers.values]
+    Cache-Control = "public, max-age=604800"
