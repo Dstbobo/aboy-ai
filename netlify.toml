@@ -36,3 +36,9 @@
   for = "/favicon.svg"
   [headers.values]
     Cache-Control = "public, max-age=604800"
+
+# Images & icons — long cache.
+[[headers]]
+  for = "/*.png"
+  [headers.values]
+    Cache-Control = "public, max-age=604800"
