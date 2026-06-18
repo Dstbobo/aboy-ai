@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://aboyai.com/sitemap.xml
+Sitemap: https://aboyhealth.com/sitemap.xml
