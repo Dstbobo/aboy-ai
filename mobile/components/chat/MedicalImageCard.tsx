@@ -6,6 +6,7 @@ import {
   Image,
   TouchableOpacity,
   Modal,
+  Linking,
   useWindowDimensions,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -74,6 +75,13 @@ export function MedicalImageCard({ image }: { image: MedicalImage }) {
 
   const loaded = status === 'loaded';
 
+  // Open the ORIGINAL source page (Wikimedia, PubChem, …) in the device browser.
+  // Aboy only displays the image; viewing the full file or downloading it happens
+  // on the source's own site, under the source's own licence — never from us.
+  const openSource = () => {
+    if (image.page_url) Linking.openURL(image.page_url).catch(() => {});
+  };
+
   return (
     <View style={styles.wrap}>
       <TouchableOpacity activeOpacity={0.9} onPress={() => setFullscreen(true)} disabled={!loaded}>
@@ -111,6 +119,14 @@ export function MedicalImageCard({ image }: { image: MedicalImage }) {
               {[image.attribution, image.license].filter(Boolean).join(' · ')}
             </Text>
           )}
+          {image.page_url ? (
+            <TouchableOpacity style={styles.sourceLink} onPress={openSource} hitSlop={8}>
+              <Text style={styles.sourceLinkText}>
+                View on {image.source || 'source'}
+              </Text>
+              <MaterialCommunityIcons name="open-in-new" size={12} color={COLORS.primary} />
+            </TouchableOpacity>
+          ) : null}
         </View>
       )}
 
@@ -124,6 +140,14 @@ export function MedicalImageCard({ image }: { image: MedicalImage }) {
             {image.source}
             {image.title ? ` · ${image.title}` : ''}
           </Text>
+          {image.page_url ? (
+            <TouchableOpacity style={styles.fsSourceLink} onPress={openSource} hitSlop={8}>
+              <Text style={styles.fsSourceLinkText}>
+                View on {image.source || 'source'}
+              </Text>
+              <MaterialCommunityIcons name="open-in-new" size={13} color={COLORS.primary} />
+            </TouchableOpacity>
+          ) : null}
         </View>
       </Modal>
     </View>
@@ -153,6 +177,13 @@ const styles = StyleSheet.create({
   captionText: { flex: 1, fontSize: 12, color: COLORS.textSecondary },
   captionSource: { fontWeight: '700', color: COLORS.textSecondary },
   attribution: { fontSize: 10.5, color: COLORS.textSecondary, opacity: 0.7, marginTop: 2, paddingHorizontal: 2 },
+  sourceLink: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 5, paddingHorizontal: 2, alignSelf: 'flex-start' },
+  sourceLinkText: { fontSize: 12, fontWeight: '600', color: COLORS.primary },
+  fsSourceLink: {
+    position: 'absolute', bottom: 12, left: 20, right: 20,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+  },
+  fsSourceLinkText: { fontSize: 13, fontWeight: '600', color: COLORS.primary },
   // White fullscreen backdrop: transparent diagrams + dark labels stay legible
   // (a black backdrop made the labels disappear).
   fsBackdrop: { flex: 1, backgroundColor: '#ffffff', alignItems: 'center', justifyContent: 'center' },
