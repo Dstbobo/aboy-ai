@@ -53,13 +53,29 @@ export default function OnboardingRoleScreen() {
     router.push({ pathname: '/(auth)/onboarding-details', params: { role: selected } });
   }
 
+  // Role is optional — skip straight to chat with a sensible default. Users can
+  // set their role later in Settings; nothing is ever gated by role.
+  async function handleSkip() {
+    setSaving(true);
+    try {
+      await api.patch('/api/v1/profile', { role: 'student_med' });
+    } catch {
+      // non-fatal
+    }
+    await updateRoleInfo('student_med', '');
+    await completeOnboarding();
+    setSaving(false);
+    router.replace('/(clinical)/chat');
+  }
+
   return (
     <View style={[styles.flex, { paddingTop: insets.top + 18 }]}>
       <View style={styles.header}>
         <Text style={styles.step}>Step 1 of 2</Text>
         <Text style={styles.title}>What best describes you?</Text>
         <Text style={styles.subtitle}>
-          Every answer is personalised to your exact role and level.
+          Optional — it just tailors the tone of answers. You can change or skip it,
+          and nothing is ever locked to your role.
         </Text>
       </View>
 
@@ -87,6 +103,9 @@ export default function OnboardingRoleScreen() {
         >
           Continue
         </Button>
+        <TouchableOpacity onPress={handleSkip} disabled={saving} style={styles.skipBtn}>
+          <Text style={styles.skipText}>Skip for now</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -228,4 +247,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface,
   },
   continueBtn: { borderRadius: 12 },
+  skipBtn: { marginTop: 12, alignItems: 'center', paddingVertical: 6 },
+  skipText: { color: COLORS.textSecondary, fontWeight: '600', fontSize: 14 },
 });
