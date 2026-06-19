@@ -31,6 +31,11 @@ _FIG = r"(?:diagram|figure|fig\.?|image|illustration|picture|chart|schematic)"
 _IMG_PATTERNS: list[tuple[re.Pattern, str]] = [
     # Whole imperative sentence: "See the diagram below for the chambers."
     (re.compile(rf"(?:(?<=[.!?])\s+|^)(?:please\s+)?(?:see|refer to)\s+the\s+{_FIG}\s+(?:below|above)\b[^.!?]*[.!?]+\s*", re.IGNORECASE), " "),
+    # Whole sentence announcing an image will/should appear or is on screen:
+    # "A diagram of the heart should appear on your screen."
+    (re.compile(rf"(?:(?<=[.!?])\s+|^)[^.!?\n]*\b{_FIG}\b[^.!?\n]*\b(?:appears?|appearing|will\s+(?:appear|show|display|render|be\s+(?:shown|displayed|visible))|should\s+(?:appear|show|display|render)|is\s+(?:shown|displayed|rendered|visible)|on\s+(?:your\s+)?screen)\b[^.!?\n]*[.!?]+\s*", re.IGNORECASE), " "),
+    # "You should see a diagram of the heart." (whole sentence)
+    (re.compile(rf"(?:(?<=[.!?])\s+|^)you\s+(?:should|will|can|may|'?ll)\s+(?:see|find|notice|view|spot)\b[^.!?\n]*\b{_FIG}\b[^.!?\n]*[.!?]+\s*", re.IGNORECASE), " "),
     # Parenthetical: "(see the diagram below)", "(refer to figure above)"
     (re.compile(rf"\s*\((?:please\s+)?(?:see|refer to|cf\.?)[^)]*\b{_FIG}\b[^)]*\)", re.IGNORECASE), ""),
     # Lead-in clause: "As you can see in the diagram below, ..."
@@ -43,12 +48,15 @@ _IMG_PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(rf"(?i)\b(the\s+{_FIG})\s+(?:below|above)\b"), r"\1"),
     # Generic: "shown below" / "depicted above" → "here"
     (re.compile(r"(?i)\b(?:shown|illustrated|depicted|pictured|seen)\s+(?:below|above)\b"), "here"),
+    # Leftover "appears on your screen" / "displayed on screen" phrase
+    (re.compile(r"(?i)\b(?:appears?|appearing|shown|displayed|rendered|visible)\s+(?:just\s+)?on\s+(?:your\s+)?screen\b"), ""),
 ]
 _CLEANUP = [
     (re.compile(r"[ \t]{2,}"), " "),
     (re.compile(r"\s+([,.;:])"), r"\1"),
     (re.compile(r",\s*,"), ","),
     (re.compile(r"\(\s*\)"), ""),
+    (re.compile(r"^[ \t]+"), ""),  # leading space left when a lead sentence was removed
 ]
 _RECAP = re.compile(r"(^|[.!?]\s+|\n)([a-z])")
 

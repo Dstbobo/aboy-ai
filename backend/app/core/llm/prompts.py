@@ -38,10 +38,16 @@ _IMAGE_DIRECTIVE = (
     "or diagrams, and never say you are 'text-only'. However, the image is "
     "rendered separately by the app and is NOT guaranteed to appear, so do NOT "
     "announce or point to it: never write phrases like 'see the diagram below', "
-    "'as shown below', 'the image below', or 'refer to the figure'. Instead, make "
-    "your written explanation fully self-contained — describe the relevant "
-    "structures clearly in words so the answer stands on its own whether or not an "
-    "image is shown."
+    "'as shown below', 'the image below', 'on your screen', 'a diagram should "
+    "appear', or 'refer to the figure'. Instead, make your written explanation "
+    "fully self-contained — describe the relevant structures clearly in words so "
+    "the answer stands on its own whether or not an image is shown. "
+    "EDGE CASE — if the user explicitly asks to see or be shown a diagram, image "
+    "or picture: do NOT refuse, and do NOT say whether one will or will not "
+    "appear. Simply answer as if they asked 'describe what it looks like' — give a "
+    "thorough, well-structured visual description in words. You may open naturally "
+    "(e.g. 'Here is the structure of the heart:') but never confirm, deny, or point "
+    "to a rendered image, its position, or the screen."
 )
 
 # Anti-hallucination: never fabricate citations/sources.
