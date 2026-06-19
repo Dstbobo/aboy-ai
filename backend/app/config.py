@@ -53,17 +53,9 @@ class Settings(BaseSettings):
     def allowed_origins_list(self) -> list[str]:
         return [o.strip() for o in self.allowed_origins.split(",")]
 
-    # Rate limits per role (daily)
-    rate_limits: dict[str, int | float] = {
-        "admin": float("inf"),
-        "educator": 500,
-        "pro_senior": 200,
-        "pro_junior": 150,
-        "pro_nurse": 100,
-        "student_med": 50,
-        "student_nurse": 50,
-        "student_allied": 50,
-    }
+    # One flat daily query limit for every user — role never restricts usage.
+    # (Abuse protection only; the daily token budget is the real cost control.)
+    daily_query_limit: int = 300
 
     # Tavily allowed domains
     tavily_include_domains: list[str] = [

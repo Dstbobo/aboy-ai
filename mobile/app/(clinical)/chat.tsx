@@ -89,7 +89,19 @@ export default function ChatScreen() {
     finaliseStream,
     setMessageImage,
   } = useChatStore();
-  const stopStreamRef = useRef<(() => void) | null>(null);
+  // The currently in-flight request. cancel() works even before the underlying
+  // XHR exists (during token fetch), so Stop / a new send can't leave an
+  // orphaned stream running in the background.
+  const activeReq = useRef<{ cancel: () => void } | null>(null);
+
+  function abortActiveRequest() {
+    if (activeReq.current) {
+      activeReq.current.cancel();
+      activeReq.current = null;
+    }
+    const streaming = useChatStore.getState().messages.find((m) => m.isStreaming);
+    if (streaming) finaliseStream(streaming.id, [], false);
+  }
   const { isOffline, enqueueQuery } = useOfflineStore();
   const openPlusSheet = useUIStore((s) => s.openPlusSheet);
   const openVoiceMode = useUIStore((s) => s.openVoiceMode);
@@ -132,7 +144,7 @@ export default function ChatScreen() {
 
   async function sendMessage(textOverride?: string) {
     const text = (textOverride ?? inputText).trim();
-    if (!text || isLoading) return;
+    if (!text) return;
     setInputText('');
 
     if (isOffline) {
@@ -140,6 +152,10 @@ export default function ChatScreen() {
       enqueueQuery(text, sessionId);
       return;
     }
+
+    // A new send always supersedes any in-flight request — cancel it first so
+    // two streams can never run at once.
+    abortActiveRequest();
 
     addUserMessage(text);
     useProgressStore.getState().recordQuery(text); // learning progress
@@ -160,13 +176,20 @@ export default function ChatScreen() {
     const aiId = 'ai' + Date.now();
     let started = false;
     let finished = false;
+    let cancelled = false;
+    let abort: (() => void) | null = null;
+    const handle = { cancel: () => { cancelled = true; abort?.(); } };
+    activeReq.current = handle;
+    const clearIfCurrent = () => { if (activeReq.current === handle) activeReq.current = null; };
 
     try {
-      stopStreamRef.current = await streamQuery(text, sessionId, history, {
+      abort = await streamQuery(text, sessionId, history, {
         onStart: (sid) => {
+          if (cancelled) return;
           if (!sessionId) setSession(sid);
         },
         onToken: (chunk) => {
+          if (cancelled) return;
           if (!started) {
             started = true;
             startStreaming(aiId); // first token → swap the thinking dots for the bubble
@@ -174,23 +197,25 @@ export default function ChatScreen() {
           appendStream(chunk);
         },
         onImage: (image) => {
+          if (cancelled) return;
           setMessageImage(aiId, image);
         },
         onMeta: (citations, emergency, _sid, auditId) => {
+          if (cancelled) return;
           finaliseStream(aiId, citations as any, emergency, auditId);
         },
         onDone: () => {
-          if (finished) return;
+          if (finished || cancelled) return;
           finished = true;
           if (!started) {
             // No tokens arrived (e.g. empty) — drop the loading state.
             addAssistantMessage('err' + Date.now(), 'No response received. Please try again.', [], false);
           }
-          stopStreamRef.current = null;
+          clearIfCurrent();
           setLoading(false);
         },
         onError: (e: any) => {
-          if (finished) return;
+          if (finished || cancelled) return;
           finished = true;
           const status = e?.response?.status;
           console.warn('[chat] stream failed', { status, code: e?.code });
@@ -201,12 +226,18 @@ export default function ChatScreen() {
           else if (e?.code === 'ECONNABORTED') friendly = 'The request timed out. Please try again.';
           if (started) finaliseStream(aiId, [], false);
           else addAssistantMessage('err' + Date.now(), friendly, [], false);
-          stopStreamRef.current = null;
+          clearIfCurrent();
           setLoading(false);
         },
       });
+      // If Stop (or a new send) fired during the await above, the XHR existed
+      // only after this point — abort it now so it can't keep streaming.
+      if (cancelled) abort?.();
     } catch (e) {
-      addAssistantMessage('err' + Date.now(), 'Network error — please check your connection.', [], false);
+      if (!cancelled) {
+        addAssistantMessage('err' + Date.now(), 'Network error — please check your connection.', [], false);
+      }
+      clearIfCurrent();
       setLoading(false);
     }
   }
@@ -225,11 +256,9 @@ export default function ChatScreen() {
   }
 
   function stopGenerating() {
-    // Stop the stream; keep whatever text already arrived.
-    stopStreamRef.current?.();
-    stopStreamRef.current = null;
-    const streaming = useChatStore.getState().messages.find((m) => m.isStreaming);
-    if (streaming) finaliseStream(streaming.id, [], false);
+    // Stop the stream; keep whatever text already arrived. Works even if the
+    // request is still in its async setup window (orphan-proof).
+    abortActiveRequest();
     setLoading(false);
   }
 

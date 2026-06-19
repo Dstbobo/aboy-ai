@@ -14,7 +14,9 @@ async def check_rate_limit(user: AuthenticatedUser) -> None:
     if is_unlimited(user_id=user.user_id, email=getattr(user, "email", None)):
         return
     settings = get_settings()
-    limit = settings.rate_limits.get(user.role, 50)
+    # One flat daily limit for everyone — role never restricts usage. The daily
+    # token budget is the real cost control; this is just abuse protection.
+    limit = settings.daily_query_limit
     if math.isinf(limit):
         return
 
