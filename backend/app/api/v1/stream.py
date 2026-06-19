@@ -12,7 +12,7 @@ from app.core.audit.logger import log_query
 from app.core.audit.models import AuditEvent
 from app.core.llm.client import stream_response
 from app.core.llm.sanitize import StreamFilter, sanitize_answer
-from app.core.llm.prompts import build_user_prompt, get_system_prompt
+from app.core.llm.prompts import build_user_prompt, get_system_prompt, VISUAL_DIRECTIVE
 from app.core.rag.classifier import TIER_CONVERSATIONAL, TIER_STATIC, classify
 from app.core.rag.context_builder import build_context
 from app.core.rag.embedder import embed_query
@@ -20,7 +20,7 @@ from app.core.rag.pipeline import _build_citations
 from app.core.rag.reranker import rerank_chunks
 from app.core.rag.retriever import retrieve_chunks
 from app.core.rag.web_search import web_search
-from app.core.media.image_search import find_medical_image
+from app.core.media.image_search import find_medical_image, is_visual_question
 from app.core.intelligence.profile import (
     get_raw_profile,
     personalization_snippet,
@@ -98,6 +98,10 @@ async def _event_generator(
     system_prompt = get_system_prompt(user.role, getattr(user, "sub_role", None))
     if cls.tier != TIER_CONVERSATIONAL:
         system_prompt += personalization_snippet(await get_raw_profile(user.user_id))
+        # Tier B: visual/structural topics get a labelled breakdown so the text
+        # reads like a textbook figure even when no image is attached.
+        if is_visual_question(request.query, user.role):
+            system_prompt += VISUAL_DIRECTIVE
     if cls.tier == TIER_CONVERSATIONAL:
         system_prompt += " This is a brief conversational message — reply naturally and concisely without citations."
     user_prompt = build_user_prompt(request.query, context, request.history)

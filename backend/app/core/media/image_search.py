@@ -154,6 +154,25 @@ def detect_visual_query(question: str, role: str) -> str | None:
     return None
 
 
+# Broad "is this a visual/structural topic?" check — used to trigger the Tier B
+# labelled-breakdown answer even for concepts we have no curated image for
+# (e.g. "lymph node structure"), so gaps still read like a textbook figure.
+_VISUAL_TOPIC_RE = re.compile(
+    r"\b(?:anatomy|anatomical|structures?|layers?|cross[- ]?section|histolog\w*|"
+    r"morpholog\w*|labell?ed|diagram|parts of|components of|stages? of|"
+    r"what (?:does|do) .* look like|draw|illustrat\w*)\b",
+    re.IGNORECASE,
+)
+
+
+def is_visual_question(question: str, role: str = "") -> bool:
+    """True if the question is about a visual/structural topic (curated concept
+    OR broad anatomical/structural intent)."""
+    if detect_visual_query(question, role):
+        return True
+    return bool(_VISUAL_TOPIC_RE.search(question))
+
+
 _HTML_TAG = re.compile(r"<[^>]+>")
 
 # Wikimedia hosts the same diagram translated into many languages as separate

@@ -86,6 +86,16 @@ _SCOPE_DIRECTIVE = (
 )
 
 
+# Tier B — make visual/structural topics read like a labelled textbook figure,
+# so the answer is a strong study reference even when no image is attached.
+VISUAL_DIRECTIVE = (
+    " This is a visual or structural topic. Include a clearly structured, numbered "
+    "breakdown of the key parts, regions, layers or steps — each on its own line with "
+    "a short note on what it is or does (like the labels around a textbook figure). "
+    "Lead with the breakdown so the explanation works as a study reference on its own."
+)
+
+
 def _base_for(role: str, sub_role: str | None = None) -> str:
     """Pick one of three tone profiles from the role category. Role is ONLY a
     default for tone — it never names a narrow persona and never gates content."""

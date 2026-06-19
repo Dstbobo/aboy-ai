@@ -8,10 +8,10 @@ from app.core.audit.models import AuditEvent
 from app.core.cache import cache_get, cache_set, query_hash, TTL_RESPONSE
 from app.core.token_budget import LIMIT_MESSAGE, add_usage, is_exhausted
 from app.core.llm.client import generate_response
-from app.core.llm.prompts import build_user_prompt, get_system_prompt
+from app.core.llm.prompts import build_user_prompt, get_system_prompt, VISUAL_DIRECTIVE
 from app.core.llm.safety import is_safe_output
 from app.core.llm.sanitize import sanitize_answer
-from app.core.media.image_search import find_medical_image
+from app.core.media.image_search import find_medical_image, is_visual_question
 from app.utils.background import fire_and_forget
 from app.core.intelligence.profile import (
     get_raw_profile,
@@ -125,6 +125,9 @@ async def run_rag_pipeline(
     # Personalise depth based on what this learner already knows / struggles with.
     if cls.tier != TIER_CONVERSATIONAL:
         system_prompt += personalization_snippet(await get_raw_profile(user.user_id))
+        # Tier B: visual/structural topics get a labelled breakdown (textbook feel).
+        if is_visual_question(request.query, user.role):
+            system_prompt += VISUAL_DIRECTIVE
     if cls.tier == TIER_CONVERSATIONAL:
         system_prompt += (
             " This is a brief conversational message — reply naturally and concisely "
