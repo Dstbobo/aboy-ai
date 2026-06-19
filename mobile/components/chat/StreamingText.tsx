@@ -9,19 +9,6 @@ interface Props {
   isStreaming?: boolean;
 }
 
-// Common drug names highlighted in a distinct colour.
-const DRUGS = [
-  'metformin', 'insulin', 'aspirin', 'paracetamol', 'acetaminophen', 'ibuprofen',
-  'amoxicillin', 'ceftriaxone', 'azithromycin', 'warfarin', 'heparin', 'atorvastatin',
-  'simvastatin', 'lisinopril', 'ramipril', 'amlodipine', 'losartan', 'metoprolol',
-  'bisoprolol', 'furosemide', 'spironolactone', 'omeprazole', 'pantoprazole',
-  'salbutamol', 'albuterol', 'prednisolone', 'prednisone', 'hydrocortisone',
-  'morphine', 'codeine', 'tramadol', 'diazepam', 'lorazepam', 'haloperidol',
-  'levothyroxine', 'digoxin', 'clopidogrel', 'gentamicin', 'ciprofloxacin',
-  'vancomycin', 'paclitaxel', 'methotrexate', 'oxytocin', 'magnesium sulfate',
-];
-const DRUG_RE = new RegExp(`\\b(${DRUGS.join('|')})\\b`, 'gi');
-
 // Known programming languages → rendered as dark code panels. Anything else
 // containing arrows/box-drawing is treated as an ASCII diagram.
 const CODE_LANGS = /^(py|python|js|javascript|ts|typescript|sql|json|bash|sh|java|c|cpp|go|rust|kotlin|swift|html|css|xml|yaml)$/i;
@@ -89,28 +76,11 @@ function splitSvgBlocks(md: string): Segment[] {
   return out.length ? out : [{ type: 'md', value: md }];
 }
 
-// Custom render rules: alternating table rows + drug-name highlighting.
+// Custom render rules. We intentionally do NOT override the `text` rule —
+// overriding it drops the library's inheritedStyles, which breaks **bold**,
+// *italic* and link styling (they render flat). Let the library handle inline
+// text natively; we only customise code/diagram blocks and table rows.
 const rules = {
-  // Colour drug names inside any text node.
-  text: (node: any, _children: any, _parent: any, st: any) => {
-    const content: string = node.content ?? '';
-    if (!DRUG_RE.test(content)) {
-      return <Text key={node.key} style={st.text}>{content}</Text>;
-    }
-    DRUG_RE.lastIndex = 0;
-    const parts: React.ReactNode[] = [];
-    let last = 0;
-    let m: RegExpExecArray | null;
-    while ((m = DRUG_RE.exec(content)) !== null) {
-      if (m.index > last) parts.push(content.slice(last, m.index));
-      parts.push(
-        <Text key={`${node.key}-${m.index}`} style={styles.drug}>{m[0]}</Text>,
-      );
-      last = m.index + m[0].length;
-    }
-    if (last < content.length) parts.push(content.slice(last));
-    return <Text key={node.key} style={st.text}>{parts}</Text>;
-  },
   // Fenced blocks: dark panel for real code, clean light textbook block for
   // ASCII diagrams (dark text on white, monospace kept for alignment).
   fence: (node: any) => renderBlock(node),
@@ -149,7 +119,6 @@ const styles = StyleSheet.create({
   codeBox: { backgroundColor: '#0f172a', borderRadius: 8, padding: 12, marginVertical: 8 },
   codeText: { color: '#e2e8f0', fontFamily: 'monospace', fontSize: 12.5, lineHeight: 18 },
   svgWrap: { marginVertical: 10, alignItems: 'center' },
-  drug: { color: COLORS.primaryDark, fontWeight: '700' },
   rowEven: { backgroundColor: '#ffffff' },
   rowAlt: { backgroundColor: '#f3f6f9' },
 });

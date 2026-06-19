@@ -74,22 +74,36 @@ _TONE_DIRECTIVE = (
 )
 
 
+# Never let the user's role/specialty narrow what Aboy will answer. (A user's
+# specialty must NOT make the model self-scope and refuse off-specialty topics.)
+_SCOPE_DIRECTIVE = (
+    " Aboy is a general healthcare, medical and study assistant for everyone. "
+    "Answer ANY medical, clinical, scientific, anatomical or study question the user "
+    "asks — fully and helpfully — regardless of their stated role, specialty or job. "
+    "NEVER refuse, deflect, or tell the user a topic is 'outside my scope', 'not my "
+    "area', 'not what I'm designed for', or redirect them back to their specialty. A "
+    "user's role only adjusts tone and examples; it never limits which topics you cover."
+)
+
+
 def _base_for(role: str, sub_role: str | None = None) -> str:
-    """Pick one of three tone profiles from the role category. Role is only a
-    default for tone — content adapts to the question, never gated by role."""
+    """Pick one of three tone profiles from the role category. Role is ONLY a
+    default for tone — it never names a narrow persona and never gates content."""
     r = (role or "").lower()
-    who = (sub_role or "").strip()
-    suffix = f" for a {who}" if who else ""
     if r.startswith("student_") or r.startswith("edu_") or r == "educator":
-        return f"You are Aboy, a healthcare education AI assistant{suffix}. " + _TEACHING_BASE
+        return "You are Aboy, a healthcare education AI assistant. " + _TEACHING_BASE
     if r.startswith("pro_") or r.startswith("res_"):
-        return f"You are Aboy, a clinical AI assistant{suffix}. " + _PROFESSIONAL_BASE
-    return f"You are Aboy, a healthcare AI assistant{suffix}. " + _GENERAL_BASE
+        return "You are Aboy, a clinical AI assistant. " + _PROFESSIONAL_BASE
+    return "You are Aboy, a healthcare AI assistant. " + _GENERAL_BASE
 
 
 def get_system_prompt(role: str, sub_role: str | None = None) -> str:
-    """Return the most specific system prompt for this role + sub_role combination."""
-    return _base_for(role, sub_role) + _IMAGE_DIRECTIVE + _TONE_DIRECTIVE + _CITATION_DIRECTIVE
+    """Build the system prompt: tone profile + global directives. Role/sub_role
+    affect tone only — never topic scope."""
+    return (
+        _base_for(role, sub_role)
+        + _SCOPE_DIRECTIVE + _IMAGE_DIRECTIVE + _TONE_DIRECTIVE + _CITATION_DIRECTIVE
+    )
 
 
 def build_user_prompt(query: str, context: str, history: list | None = None) -> str:
