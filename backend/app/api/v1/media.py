@@ -11,6 +11,8 @@ when the owned asset fails to load on the client.
 Every request increments compact per-day counters (no per-request rows).
 """
 
+import ipaddress
+import re
 import time
 from urllib.parse import urlparse
 
@@ -24,11 +26,31 @@ from app.utils.background import fire_and_forget
 
 router = APIRouter()
 
-_ALLOWED_HOSTS = {
+# Curated sources get a known per-domain rate; everything else (web image
+# search results) is allowed too, as long as the host is a public address.
+_KNOWN_HOSTS = {
     "upload.wikimedia.org",
     "commons.wikimedia.org",
     "pubchem.ncbi.nlm.nih.gov",
 }
+# SSRF guard: never let the proxy fetch internal/loopback/metadata targets.
+_BLOCKED_HOST_RE = re.compile(r"(^|\.)(localhost|local|internal|lan|home|corp)$", re.IGNORECASE)
+
+
+def _is_safe_public_host(host: str) -> bool:
+    """True only for a public https host — blocks internal names and any
+    private/reserved/loopback IP literal so the proxy can't be used for SSRF."""
+    if not host:
+        return False
+    h = host.split(":")[0].strip("[]")  # drop port / IPv6 brackets
+    if _BLOCKED_HOST_RE.search(h):
+        return False
+    try:
+        return ipaddress.ip_address(h).is_global  # IP literal → must be public
+    except ValueError:
+        return True  # a normal hostname (DNS); content-type is still verified below
+
+
 _UA = "AboyAI/1.0 (https://aboyai.com; medical education) image-proxy"
 _PROXY_TTL = 24 * 60 * 60
 
@@ -93,7 +115,7 @@ async def image_resolve(
     reason = "storage_error" if fb else "unmigrated"
     parsed = urlparse(u)
     host = parsed.netloc.lower()
-    if parsed.scheme != "https" or host not in _ALLOWED_HOSTS:
+    if parsed.scheme != "https" or not _is_safe_public_host(host):
         fire_and_forget(_log(concept, "fallback", reason, "failure"))
         raise HTTPException(status_code=400, detail="URL host not allowed")
 

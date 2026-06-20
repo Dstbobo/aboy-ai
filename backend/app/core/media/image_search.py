@@ -11,13 +11,14 @@ shows no image (never a broken one).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 import httpx
 
-from app.core.cache import cache_get, cache_set
+from app.core.cache import cache_get, cache_set, query_hash
 from app.db.supabase import get_db
 
 logger = logging.getLogger(__name__)
@@ -477,6 +478,96 @@ async def _log_resolution(concept: str, served: bool) -> None:
         pass
 
 
+# ── Web image search (broad fallback) ──────────────────────────────────────
+# When the curated detector has no concept for a visual question, search the
+# wider web for a real image via Tavily (which we already use for text). The
+# image is shown WITH its source link — Aboy never hosts it; the user views it
+# and, if they want it, downloads from the source. Results are verified to load
+# and lightly filtered to skip logos/icons/sprites.
+_BAD_IMG_URL = re.compile(
+    r"\b(?:logo|icon|sprite|avatar|favicon|thumb(?:nail)?|placeholder|banner|"
+    r"button|badge|pixel|spacer|ad[_-]?|advert)\b|\.svg$",
+    re.IGNORECASE,
+)
+
+
+def _domain(url: str) -> str:
+    try:
+        host = urlparse(url).netloc.lower()
+        return host[4:] if host.startswith("www.") else host
+    except Exception:
+        return ""
+
+
+async def web_image_search(question: str) -> dict | None:
+    """Find a relevant medical image on the open web via Tavily image search.
+
+    Returns {url, title, source, page_url} for the first image that actually
+    loads, or None. Cached (hit 30d / miss 1d) so repeat questions are instant.
+    """
+    norm = re.sub(r"\s+", " ", question.strip().lower())[:120]
+    cache_key = f"webimg:{_CACHE_VERSION}:{query_hash(norm)}"
+    cached = await cache_get(cache_key)
+    if cached is not None:
+        return cached or None
+
+    from app.core.rag.web_search import _get_tavily_client
+
+    # Bias the query toward a real labelled medical figure, not a stock photo.
+    search_q = f"{question} medical diagram labelled anatomy"
+    try:
+        client = _get_tavily_client()
+        resp = await asyncio.wait_for(
+            client.search(
+                query=search_q,
+                search_depth="basic",
+                include_images=True,
+                include_image_descriptions=True,
+                max_results=5,
+            ),
+            timeout=6.0,
+        )
+    except Exception as exc:
+        logger.warning("web image search failed for %r: %s", question, exc)
+        return None  # transient — don't cache a miss
+
+    images = resp.get("images") or []
+    # Map each image to the result page it most likely came from (same domain),
+    # so the "View on source" link opens a real page, not just the raw file.
+    pages = {(_domain(r.get("url", "")), r.get("url")) for r in (resp.get("results") or [])}
+    page_by_domain: dict[str, str] = {}
+    for dom, purl in pages:
+        if dom and purl and dom not in page_by_domain:
+            page_by_domain[dom] = purl
+
+    terms = _key_terms(question)
+    candidates: list[tuple[int, dict]] = []
+    for item in images:
+        url = item.get("url") if isinstance(item, dict) else item
+        desc = item.get("description", "") if isinstance(item, dict) else ""
+        if not url or _BAD_IMG_URL.search(url):
+            continue
+        dom = _domain(url)
+        relevant = 1 if _has_term(f"{url} {desc}", terms) else 0
+        candidates.append((relevant, {
+            "url": url,
+            "title": _clean(desc) or "Medical illustration",
+            "source": dom or "Web",
+            # Prefer a real article page on the same domain; else the image URL.
+            "page_url": page_by_domain.get(dom) or url,
+        }))
+
+    candidates.sort(key=lambda c: c[0], reverse=True)
+    for _, img in candidates[:5]:
+        if await _image_loads(img["url"]):
+            await cache_set(cache_key, img, _TTL_HIT)
+            logger.info("WEB IMAGE %.40s -> %s (%s)", question, img["title"], img["source"])
+            return img
+
+    await cache_set(cache_key, {}, _TTL_MISS)
+    return None
+
+
 async def _log_coverage_gap(question: str) -> None:
     try:
         norm = re.sub(r"\s+", " ", question.strip().lower())[:200]
@@ -496,16 +587,21 @@ async def find_medical_image(question: str, role: str) -> dict | None:
     from app.utils.background import fire_and_forget
 
     query = detect_visual_query(question, role)
-    if not query:
-        # Detector found no concept — if the user clearly wanted a visual, log
-        # it so curation can add the concept they actually want.
-        if _VISUAL_INTENT.search(question):
-            fire_and_forget(_log_coverage_gap(question))
-        return None
+    if query:
+        image = await resolve_concept(query)
+        fire_and_forget(_log_resolution(query, image is not None))
+        if image:
+            return image
+        # Curated concept but nothing in Wikimedia/PubChem — fall through to web.
 
-    image = await resolve_concept(query)
-    fire_and_forget(_log_resolution(query, image is not None))
-    return image
+    # No curated image. If the question is visual at all, search the wider web
+    # so coverage isn't limited to the ~100 hard-coded concepts.
+    if is_visual_question(question, role) or _VISUAL_INTENT.search(question):
+        web_img = await web_image_search(question)
+        if web_img:
+            return web_img
+        fire_and_forget(_log_coverage_gap(question))
+    return None
 
 
 def all_prefetch_concepts() -> list[str]:
