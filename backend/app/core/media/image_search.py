@@ -95,6 +95,12 @@ _CONCEPTS: list[tuple[str, str]] = [
     (r"\bbones?\b|\bskeleton\b|\bfemur\b|\bskull\b", "human skeleton anatomy diagram"),
     (r"\bmuscles?\b", "human muscle anatomy diagram"),
     (r"\bbrachial plexus\b", "brachial plexus diagram"),
+    # Reproductive anatomy (educational diagrams)
+    (r"\bvagina\w*|\bvulva\w*|\bcervix\b|\bcervical canal\b", "female reproductive system anatomy diagram"),
+    (r"\buterus\b|\buterine\b|\bwomb\b|\bendometri\w*|\bfallopian\b|\bovar(?:y|ies)\b", "female reproductive system anatomy diagram"),
+    (r"\bpenis\w*|\btestis\b|\btestes\b|\btesticl\w*|\bscrotum\b|\bprostate\b|\bepididym\w*", "male reproductive system anatomy diagram"),
+    (r"\bbreast\w*|\bmammary\b", "breast anatomy diagram"),
+    (r"\bplacenta\w*|\bfetus\b|\bfoetus\b|\bumbilical cord\b", "placenta fetus anatomy diagram"),
     # Equipment / devices / procedures
     (r"\bventilator\b", "mechanical ventilator medical equipment"),
     (r"\bdefibrillator\b", "defibrillator medical equipment"),
@@ -463,7 +469,7 @@ async def resolve_concept(concept: str, *, allow_live: bool = True) -> dict | No
 _VISUAL_INTENT = re.compile(
     r"\b(?:show me|what does .* look like|looks? like|diagram of|picture of|"
     r"image of|illustration of|photo of|draw(?:\s+me)?|labell?ed|anatomy of|"
-    r"structure of)\b",
+    r"structure of|how does (?:a|an|the)\b|what is (?:a|an|the)\b)\b",
     re.IGNORECASE,
 )
 
@@ -522,7 +528,18 @@ async def web_image_search(question: str) -> dict | None:
     if cached is not None:
         return cached or None
 
+    # ── Learned knowledge base ──
+    # Every image we've ever found for a question is persisted (concept='webq:…')
+    # so it survives Redis eviction and is instant next time. This is how Aboy
+    # gets smarter the more people use it — coverage grows from real questions.
+    learn_key = f"webq:{norm}"
+    learned = await _db_get(learn_key)
+    if learned:  # a dict means a previously-learned hit
+        await cache_set(cache_key, learned, _TTL_HIT)
+        return learned
+
     from app.core.rag.web_search import _get_tavily_client
+    from app.utils.background import fire_and_forget
 
     # Bias the query toward a real labelled medical figure, not a stock photo.
     search_q = f"{question} medical diagram labelled anatomy"
@@ -572,9 +589,12 @@ async def web_image_search(question: str) -> dict | None:
     for _, img in candidates[:5]:
         if await _image_loads(img["url"]):
             await cache_set(cache_key, img, _TTL_HIT)
-            logger.info("WEB IMAGE %.40s -> %s (%s)", question, img["title"], img["source"])
+            # LEARN it: persist to the KB so it's permanent + instant next time.
+            fire_and_forget(_db_put(learn_key, img))
+            logger.info("WEB IMAGE learned %.40s -> %s (%s)", question, img["title"], img["source"])
             return img
 
+    # Miss → short Redis TTL only (no DB row), so it retries as the web changes.
     await cache_set(cache_key, {}, _TTL_MISS)
     return None
 
