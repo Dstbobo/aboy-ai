@@ -74,6 +74,11 @@ export default function ChatScreen() {
   // list re-measures with the new message) jumps to the bottom — even if the
   // user had scrolled up. Cleared once the scroll has fired.
   const pendingScroll = useRef(false);
+  // Live scroll offset + the last keyboard shift, so we can move the conversation
+  // up by the keyboard height when it opens (keeping the latest messages visible
+  // above the keyboard) and back down when it closes.
+  const scrollY = useRef(0);
+  const kbShift = useRef(0);
   // Tall bottom spacer so the latest user message can scroll up to the top,
   // leaving the screen below it for the AI answer to flow into.
   const bottomSpacer = Math.round(screenHeight * 0.7);
@@ -139,14 +144,26 @@ export default function ChatScreen() {
   }, []);
 
   // Keyboard state: bar hugs the keyboard when open, floats above the home
-  // indicator (safe area) when closed.
+  // indicator (safe area) when closed. On open we also shift the conversation up
+  // by the keyboard height so the latest messages stay visible above it (the
+  // chat container responding to keyboard-height changes), and back on close.
   const [kbOpen, setKbOpen] = useState(false);
   useEffect(() => {
-    const s = Keyboard.addListener('keyboardDidShow', () => setKbOpen(true));
-    const h = Keyboard.addListener('keyboardDidHide', () => setKbOpen(false));
+    const s = Keyboard.addListener('keyboardDidShow', (e) => {
+      setKbOpen(true);
+      const h = e.endCoordinates?.height ?? 0;
+      kbShift.current = h;
+      listRef.current?.scrollToOffset({ offset: scrollY.current + h, animated: true });
+    });
+    const hide = Keyboard.addListener('keyboardDidHide', () => {
+      setKbOpen(false);
+      const back = Math.max(0, scrollY.current - kbShift.current);
+      kbShift.current = 0;
+      listRef.current?.scrollToOffset({ offset: back, animated: true });
+    });
     return () => {
       s.remove();
-      h.remove();
+      hide.remove();
     };
   }, []);
 
@@ -455,6 +472,10 @@ export default function ChatScreen() {
                     listRef.current?.scrollToEnd({ animated: true });
                   }
                 }}
+                // Track scroll position so we can shift the conversation up by
+                // the keyboard height (and back) when the keyboard opens/closes.
+                onScroll={(e) => { scrollY.current = e.nativeEvent.contentOffset.y; }}
+                scrollEventThrottle={16}
                 // Thinking dots show only until the first token streams in.
                 ListFooterComponent={isLoading && !messages.some((m) => m.isStreaming) ? <ThinkingDots label={research} /> : null}
                 keyExtractor={(m) => m.id}
