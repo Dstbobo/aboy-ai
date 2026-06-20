@@ -496,16 +496,26 @@ async def _log_resolution(concept: str, served: bool) -> None:
         pass
 
 
-# ── Web image search (broad fallback) ──────────────────────────────────────
-# When the curated detector has no concept for a visual question, search the
-# wider web for a real image via Tavily (which we already use for text). The
-# image is shown WITH its source link — Aboy never hosts it; the user views it
-# and, if they want it, downloads from the source. Results are verified to load
-# and lightly filtered to skip logos/icons/sprites.
+# ── Source-agnostic image retrieval with ranking ───────────────────────────
+# Aboy is NOT tied to Wikimedia. For a visual question it gathers candidates
+# from the open web (Tavily — any site) PLUS the curated/learned set, RANKS them
+# by relevance + source trust + quality, de-duplicates by domain so references
+# come from DIFFERENT places, and returns the best few — each shown with its own
+# source link. Winners are persisted so the knowledge base grows with use.
 _BAD_IMG_URL = re.compile(
-    r"\b(?:logo|icon|sprite|avatar|favicon|thumb(?:nail)?|placeholder|banner|"
-    r"button|badge|pixel|spacer|ad[_-]?|advert)\b|\.svg$",
+    r"\b(?:logo|icon|sprite|avatar|favicon|placeholder|banner|button|badge|"
+    r"pixel|spacer|advert)\b|\.svg$",  # .svg excluded: RN <Image> can't render it
     re.IGNORECASE,
+)
+
+# Hosts we trust more for medical images (educational / clinical / reference).
+_TRUSTED_DOMAIN_BITS = (
+    "wikimedia", "wikipedia", "pubchem", "ncbi", "nih.gov", "who.int", "cdc.gov",
+    "statpearls", "kenhub", "teachmeanatomy", "radiopaedia", "osmosis", "amboss",
+    "lecturio", "geekymedics", "medlineplus", "mayoclinic", "clevelandclinic",
+    "openstax", "getbodysmart", "innerbody", "netterimages", "britannica",
+    "microbenotes", "biologydictionary", "healthline", "verywellhealth", "webmd",
+    "physio-pedia", "anatomy", "medical", "derm", "medscape",
 )
 
 
@@ -517,87 +527,152 @@ def _domain(url: str) -> str:
         return ""
 
 
-async def web_image_search(question: str) -> dict | None:
-    """Find a relevant medical image on the open web via Tavily image search.
+def _domain_trust(domain: str) -> int:
+    """0–3 trust score for an image host (higher = more reliable medical source)."""
+    if not domain:
+        return 0
+    if domain.endswith((".edu", ".gov", ".ac.uk")):
+        return 3
+    if any(bit in domain for bit in _TRUSTED_DOMAIN_BITS):
+        return 2
+    return 1
 
-    Returns {url, title, source, page_url} for the first image that actually
-    loads, or None. Cached (hit 30d / miss 1d) so repeat questions are instant.
-    """
-    norm = re.sub(r"\s+", " ", question.strip().lower())[:120]
-    cache_key = f"webimg:{_CACHE_VERSION}:{query_hash(norm)}"
-    cached = await cache_get(cache_key)
-    if cached is not None:
-        return cached or None
 
-    # ── Learned knowledge base ──
-    # Every image we've ever found for a question is persisted (concept='webq:…')
-    # so it survives Redis eviction and is instant next time. This is how Aboy
-    # gets smarter the more people use it — coverage grows from real questions.
-    learn_key = f"webq:{norm}"
-    learned = await _db_get(learn_key)
-    if learned:  # a dict means a previously-learned hit
-        await cache_set(cache_key, learned, _TTL_HIT)
-        return learned
+def _rank_score(cand: dict, terms: set[str]) -> int:
+    """Rank a candidate: relevance to the question + source trust + a small
+    bonus for things that read like a labelled diagram."""
+    text = f"{cand.get('url','')} {cand.get('title','')} {cand.get('_desc','')}"
+    relevant = 4 if _has_term(text, terms) else 0
+    trust = _domain_trust(cand.get("_domain", "")) * 2
+    labelled = 1 if re.search(r"diagram|labell?ed|anatomy|cross[- ]?section", text, re.I) else 0
+    return relevant + trust + labelled
 
+
+async def _web_candidates(question: str) -> list[dict]:
+    """Image candidates from the open web (ANY site) via Tavily. Unverified —
+    the orchestrator verifies the top-ranked ones load before using them."""
     from app.core.rag.web_search import _get_tavily_client
-    from app.utils.background import fire_and_forget
 
-    # Bias the query toward a real labelled medical figure, not a stock photo.
     search_q = f"{question} medical diagram labelled anatomy"
     try:
         client = _get_tavily_client()
         resp = await asyncio.wait_for(
-            client.search(
-                query=search_q,
-                search_depth="basic",
-                include_images=True,
-                include_image_descriptions=True,
-                max_results=5,
-            ),
+            client.search(query=search_q, search_depth="basic",
+                          include_images=True, include_image_descriptions=True,
+                          max_results=6),
             timeout=6.0,
         )
     except Exception as exc:
         logger.warning("web image search failed for %r: %s", question, exc)
-        return None  # transient — don't cache a miss
+        return []
 
     images = resp.get("images") or []
-    # Map each image to the result page it most likely came from (same domain),
-    # so the "View on source" link opens a real page, not just the raw file.
-    pages = {(_domain(r.get("url", "")), r.get("url")) for r in (resp.get("results") or [])}
-    page_by_domain: dict[str, str] = {}
-    for dom, purl in pages:
-        if dom and purl and dom not in page_by_domain:
-            page_by_domain[dom] = purl
+    # Map each image's domain → a real article page on that domain for the link.
+    pages: dict[str, str] = {}
+    for r in (resp.get("results") or []):
+        d = _domain(r.get("url", ""))
+        if d and d not in pages:
+            pages[d] = r.get("url")
 
-    terms = _key_terms(question)
-    candidates: list[tuple[int, dict]] = []
+    out: list[dict] = []
     for item in images:
         url = item.get("url") if isinstance(item, dict) else item
         desc = item.get("description", "") if isinstance(item, dict) else ""
         if not url or _BAD_IMG_URL.search(url):
             continue
         dom = _domain(url)
-        relevant = 1 if _has_term(f"{url} {desc}", terms) else 0
-        candidates.append((relevant, {
+        out.append({
             "url": url,
             "title": _clean(desc) or "Medical illustration",
             "source": dom or "Web",
-            # Prefer a real article page on the same domain; else the image URL.
-            "page_url": page_by_domain.get(dom) or url,
-        }))
+            "page_url": pages.get(dom) or url,
+            "_domain": dom,
+            "_desc": desc,
+        })
+    return out
 
-    candidates.sort(key=lambda c: c[0], reverse=True)
-    for _, img in candidates[:5]:
-        if await _image_loads(img["url"]):
-            await cache_set(cache_key, img, _TTL_HIT)
-            # LEARN it: persist to the KB so it's permanent + instant next time.
-            fire_and_forget(_db_put(learn_key, img))
-            logger.info("WEB IMAGE learned %.40s -> %s (%s)", question, img["title"], img["source"])
-            return img
 
-    # Miss → short Redis TTL only (no DB row), so it retries as the web changes.
-    await cache_set(cache_key, {}, _TTL_MISS)
-    return None
+async def _curated_candidate(question: str, role: str) -> dict | None:
+    """The best curated/learned image (often Wikimedia/PubChem or an owned asset)
+    as ONE ranked candidate — no longer auto-preferred over the web."""
+    query = detect_visual_query(question, role)
+    if not query:
+        return None
+    img = await resolve_concept(query)
+    if not img:
+        return None
+    dom = _domain(img.get("url", "")) or (img.get("source", "") or "").lower()
+    return {**img, "_domain": dom, "_desc": img.get("title", "")}
+
+
+def _public(cand: dict) -> dict:
+    """Drop internal scoring keys before returning to the caller."""
+    return {k: v for k, v in cand.items() if not k.startswith("_")}
+
+
+async def find_medical_images(question: str, role: str, limit: int = 3) -> list[dict]:
+    """Source-agnostic, ranked image retrieval. Returns up to `limit` real
+    images for a visual question — gathered from the open web AND the curated/
+    learned set, ranked by relevance + source trust + quality, de-duplicated so
+    the references come from DIFFERENT places, each with its own source link.
+    Winners are persisted to the learning KB. Returns [] for non-visual."""
+    from app.utils.background import fire_and_forget
+
+    visual = (
+        bool(detect_visual_query(question, role))
+        or is_visual_question(question, role)
+        or bool(_VISUAL_INTENT.search(question))
+    )
+    if not visual:
+        return []
+
+    norm = re.sub(r"\s+", " ", question.strip().lower())[:120]
+    cache_key = f"imgs:{_CACHE_VERSION}:{query_hash(norm)}:{limit}"
+    cached = await cache_get(cache_key)
+    if cached is not None:
+        return cached or []
+
+    # Gather from all sources in parallel — Wikimedia is just one candidate now.
+    curated, web = await asyncio.gather(
+        _curated_candidate(question, role),
+        _web_candidates(question),
+    )
+    pool: list[dict] = list(web)
+    if curated:
+        pool.append(curated)
+
+    terms = _key_terms(question)
+    pool.sort(key=lambda c: _rank_score(c, terms), reverse=True)
+
+    # Verify the top candidates load (concurrently, so it stays fast), then take
+    # the best that work — ONE per domain so references come from different sites.
+    top = pool[:8]
+    loads = await asyncio.gather(*[_image_loads(c["url"]) for c in top], return_exceptions=True)
+    chosen: list[dict] = []
+    seen_domains: set[str] = set()
+    for cand, ok in zip(top, loads):
+        if ok is not True:
+            continue
+        dom = cand.get("_domain") or cand.get("source", "")
+        if dom in seen_domains:
+            continue
+        seen_domains.add(dom)
+        chosen.append(_public(cand))
+        if len(chosen) >= limit:
+            break
+
+    if chosen:
+        await cache_set(cache_key, chosen, _TTL_HIT)
+        # LEARN the best one so it's permanent + instant next time.
+        fire_and_forget(_db_put(f"webq:{norm}", chosen[0]))
+        fire_and_forget(_log_resolution(norm, True))
+        logger.info("IMAGES %.40s -> %d refs (%s)", question, len(chosen),
+                    ", ".join(c["source"] for c in chosen))
+    else:
+        await cache_set(cache_key, [], _TTL_MISS)
+        fire_and_forget(_log_coverage_gap(question))
+        fire_and_forget(_log_resolution(norm, False))
+    return chosen
 
 
 async def _log_coverage_gap(question: str) -> None:
@@ -610,39 +685,9 @@ async def _log_coverage_gap(question: str) -> None:
 
 
 async def find_medical_image(question: str, role: str) -> dict | None:
-    """Detect a visual medical concept and return one illustration, or None.
-
-    Lookup order: Redis → pre-fetched `medical_images` DB table → live fetch
-    (Wikimedia/PubChem) which is then stored in the DB for instant reuse.
-    Records lightweight observability (resolution outcome / coverage gaps).
-    """
-    from app.utils.background import fire_and_forget
-
-    query = detect_visual_query(question, role)
-    appearance = bool(_APPEARANCE_INTENT.search(question))
-
-    # Clinical-appearance questions ("what does psoriasis look like") want a real
-    # photo, not a generic anatomy diagram — try the web first for these.
-    if appearance:
-        web_img = await web_image_search(question)
-        if web_img:
-            return web_img
-
-    if query:
-        image = await resolve_concept(query)
-        fire_and_forget(_log_resolution(query, image is not None))
-        if image:
-            return image
-        # Curated concept but nothing in Wikimedia/PubChem — fall through to web.
-
-    # No curated image. If the question is visual at all, search the wider web
-    # so coverage isn't limited to the ~100 hard-coded concepts.
-    if is_visual_question(question, role) or _VISUAL_INTENT.search(question):
-        web_img = await web_image_search(question)
-        if web_img:
-            return web_img
-        fire_and_forget(_log_coverage_gap(question))
-    return None
+    """Single best image — back-compat for the non-streaming pipeline."""
+    imgs = await find_medical_images(question, role, limit=1)
+    return imgs[0] if imgs else None
 
 
 def all_prefetch_concepts() -> list[str]:

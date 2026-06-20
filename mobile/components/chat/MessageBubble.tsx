@@ -144,7 +144,14 @@ export function MessageBubble({ message, onRefresh }: Props) {
     <View style={styles.aiContainer}>
       {message.emergency_triggered && <EmergencyBanner />}
       <StreamingText content={message.content} isStreaming={message.isStreaming} />
-      {message.image && <MedicalImageCard image={message.image} />}
+      {/* Up to 3 ranked references from different sources; fall back to the
+          legacy single image for older messages. */}
+      {(message.images && message.images.length > 0
+        ? message.images
+        : message.image ? [message.image] : []
+      ).map((img, i) => (
+        <MedicalImageCard key={`${img.url}-${i}`} image={img} />
+      ))}
       {message.citations.length > 0 && <CitationCard citations={message.citations} />}
 
       {!message.isStreaming && message.content.length > 0 && (

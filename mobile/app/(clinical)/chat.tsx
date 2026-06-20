@@ -91,6 +91,7 @@ export default function ChatScreen() {
     appendStream,
     finaliseStream,
     setMessageImage,
+    setMessageImages,
   } = useChatStore();
   // The currently in-flight request. cancel() works even before the underlying
   // XHR exists (during token fetch), so Stop / a new send can't leave an
@@ -208,6 +209,10 @@ export default function ChatScreen() {
         onImage: (image) => {
           if (cancelled) return;
           setMessageImage(aiId, image);
+        },
+        onImages: (images) => {
+          if (cancelled) return;
+          setMessageImages(aiId, images);
         },
         onMeta: (citations, emergency, _sid, auditId) => {
           if (cancelled) return;

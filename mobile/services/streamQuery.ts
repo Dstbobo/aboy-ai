@@ -10,6 +10,7 @@ export interface StreamHandlers {
   onToken: (text: string) => void;
   onMeta?: (citations: Citation[], emergency: boolean, sessionId: string, auditId?: string) => void;
   onImage?: (image: MedicalImage) => void;
+  onImages?: (images: MedicalImage[]) => void;
   onDone: () => void;
   onError: (e: any) => void;
 }
@@ -73,6 +74,7 @@ export async function streamQuery(
         else if (msg.type === 'status') h.onStatus?.(msg.stage, msg.label);
         else if (msg.type === 'text') h.onToken(msg.content);
         else if (msg.type === 'image') h.onImage?.(msg.image as MedicalImage);
+        else if (msg.type === 'images') h.onImages?.((msg.images ?? []) as MedicalImage[]);
         else if (msg.type === 'meta') h.onMeta?.(msg.citations ?? [], !!msg.emergency_triggered, msg.session_id, msg.audit_id);
       } catch {
         // ignore malformed partial

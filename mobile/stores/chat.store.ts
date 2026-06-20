@@ -28,7 +28,8 @@ export interface Message {
   emergency_triggered: boolean;
   timestamp: Date;
   isStreaming?: boolean;
-  image?: MedicalImage | null;
+  image?: MedicalImage | null;            // legacy single image (back-compat)
+  images?: MedicalImage[] | null;         // up to 3 ranked references
   auditId?: string | null;   // server id of this answer, used to anchor feedback
 }
 
@@ -49,6 +50,7 @@ interface ChatState {
   appendStream: (chunk: string) => void;
   finaliseStream: (id: string, citations: Citation[], emergency: boolean, auditId?: string | null) => void;
   setMessageImage: (id: string, image: MedicalImage) => void;
+  setMessageImages: (id: string, images: MedicalImage[]) => void;
   setSession: (sessionId: string) => void;
   setLoading: (loading: boolean) => void;
   /** Replace the conversation with one loaded from Supabase history. */
@@ -117,6 +119,14 @@ export const useChatStore = create<ChatState>()(
           messages: s.messages.map((m) =>
             // Attach to the target id, or fall back to the live streaming message.
             m.id === id || m.isStreaming ? { ...m, image } : m,
+          ),
+        }));
+      },
+
+      setMessageImages: (id, images) => {
+        set((s) => ({
+          messages: s.messages.map((m) =>
+            m.id === id || m.isStreaming ? { ...m, images } : m,
           ),
         }));
       },

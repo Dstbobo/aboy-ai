@@ -20,7 +20,7 @@ from app.core.rag.pipeline import _build_citations
 from app.core.rag.reranker import rerank_chunks
 from app.core.rag.retriever import retrieve_chunks
 from app.core.rag.web_search import web_search
-from app.core.media.image_search import find_medical_image, is_visual_question
+from app.core.media.image_search import find_medical_images, is_visual_question
 from app.core.intelligence.profile import (
     get_raw_profile,
     personalization_snippet,
@@ -76,8 +76,9 @@ async def _event_generator(
         return
 
     # ── Auto medical illustration: look it up in parallel; emit after text ──
+    # Up to 3 ranked references from different sources, each with its own link.
     img_task = (
-        asyncio.create_task(find_medical_image(request.query, user.role))
+        asyncio.create_task(find_medical_images(request.query, user.role, limit=3))
         if cls.tier != TIER_CONVERSATIONAL
         else None
     )
@@ -147,12 +148,12 @@ async def _event_generator(
     if total_tokens:
         fire_and_forget(add_usage(user.user_id, total_tokens))
 
-    # Image arrives below the text (never blocks the stream's first token).
+    # Images arrive below the text (never block the stream's first token).
     if img_task is not None:
         try:
-            image = await img_task
-            if image:
-                yield f"data: {json.dumps({'type': 'image', 'image': image})}\n\n"
+            images = await img_task
+            if images:
+                yield f"data: {json.dumps({'type': 'images', 'images': images})}\n\n"
         except Exception:
             pass
 
