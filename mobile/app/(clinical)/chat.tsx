@@ -70,6 +70,10 @@ export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const { height: screenHeight } = useWindowDimensions();
   const listRef = useRef<FlatList>(null);
+  // Set true when a message is sent so the NEXT content-size change (after the
+  // list re-measures with the new message) jumps to the bottom — even if the
+  // user had scrolled up. Cleared once the scroll has fired.
+  const pendingScroll = useRef(false);
   // Tall bottom spacer so the latest user message can scroll up to the top,
   // leaving the screen below it for the AI answer to flow into.
   const bottomSpacer = Math.round(screenHeight * 0.7);
@@ -165,9 +169,17 @@ export default function ChatScreen() {
     useProgressStore.getState().recordQuery(text); // learning progress
     setLoading(true);
     setResearch('Thinking'); // calm initial state until the first status arrives
-    // Scroll the just-sent message up to the top; the tall bottom spacer means
-    // scrollToEnd lands the user message near the top with room for the answer.
-    setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 60);
+    // Jump to the bottom so the just-sent message + incoming answer are visible,
+    // even if the user had scrolled up. onContentSizeChange fires the scroll once
+    // the list has actually re-measured with the new message (reliable); the
+    // timeout is a fallback in case that doesn't fire.
+    pendingScroll.current = true;
+    setTimeout(() => {
+      if (pendingScroll.current) {
+        pendingScroll.current = false;
+        listRef.current?.scrollToEnd({ animated: true });
+      }
+    }, 250);
 
     // One continuous thread: include recent turns (typed AND voice).
     // Trim each turn so a long prior answer can't blow the request size /
@@ -435,6 +447,14 @@ export default function ChatScreen() {
                 data={data}
                 style={styles.flex}
                 keyboardShouldPersistTaps="handled"
+                // After a send, the list re-measures with the new message; jump
+                // to the bottom exactly once so the message + answer are visible.
+                onContentSizeChange={() => {
+                  if (pendingScroll.current) {
+                    pendingScroll.current = false;
+                    listRef.current?.scrollToEnd({ animated: true });
+                  }
+                }}
                 // Thinking dots show only until the first token streams in.
                 ListFooterComponent={isLoading && !messages.some((m) => m.isStreaming) ? <ThinkingDots label={research} /> : null}
                 keyExtractor={(m) => m.id}

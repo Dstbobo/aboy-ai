@@ -109,7 +109,10 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <KeyboardProvider>
+      {/* Edge-to-edge: these tell the keyboard-controller to account for the
+          translucent status/navigation bars, so the keyboard height is correct
+          and the chat input bar rises fully above the keyboard (no overlap). */}
+      <KeyboardProvider statusBarTranslucent navigationBarTranslucent>
         <PaperProvider theme={theme}>
           <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
           <NetworkWatcher />
