@@ -8,7 +8,6 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Animated,
-  Keyboard,
   useWindowDimensions,
 } from 'react-native';
 import { Platform } from 'react-native';
@@ -136,18 +135,6 @@ export default function ChatScreen() {
   useEffect(() => {
     if (Platform.OS !== 'android') return;
     NavigationBar.setButtonStyleAsync('dark').catch(() => {});
-  }, []);
-
-  // Keyboard state: bar hugs the keyboard when open, floats above the home
-  // indicator (safe area) when closed.
-  const [kbOpen, setKbOpen] = useState(false);
-  useEffect(() => {
-    const s = Keyboard.addListener('keyboardDidShow', () => setKbOpen(true));
-    const h = Keyboard.addListener('keyboardDidHide', () => setKbOpen(false));
-    return () => {
-      s.remove();
-      h.remove();
-    };
   }, []);
 
   async function sendMessage(textOverride?: string) {
@@ -473,9 +460,12 @@ export default function ChatScreen() {
                 conversation scrolls behind the translucent card. Sits flush on
                 the keyboard when open (KAV pads the box), clears the safe area
                 when closed. */}
+            {/* The sticky view alone handles both states (no JS listener fighting
+                it): when closed it floats `closed` px above the nav bar / home
+                indicator; when open it sits `opened` px above the keyboard. */}
             <KeyboardStickyView
-              offset={{ closed: 0, opened: 0 }}
-              style={[styles.inputOverlay, { paddingBottom: kbOpen ? 0 : insets.bottom + 8 }]}
+              offset={{ closed: insets.bottom + 8, opened: 6 }}
+              style={styles.inputOverlay}
               onLayout={(e) => setBarHeight(e.nativeEvent.layout.height)}
             >
             {/* Voice active: dock replaces the input bar, chat stays above */}
