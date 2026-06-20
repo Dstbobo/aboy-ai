@@ -21,7 +21,7 @@ import { COLORS } from '@/constants/theme';
  */
 export function PlusSheet() {
   const insets = useSafeAreaInsets();
-  const { plusSheetOpen, closePlusSheet, webSearchEnabled, toggleWebSearch } = useUIStore();
+  const { plusSheetOpen, closePlusSheet, webSearchEnabled, toggleWebSearch, openCameraSnap } = useUIStore();
 
   function comingSoon(feature: string) {
     closePlusSheet();
@@ -39,7 +39,7 @@ export function PlusSheet() {
         <Pressable style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
           <View style={styles.handle} />
 
-          <TouchableOpacity style={styles.row} onPress={() => comingSoon('Camera')}>
+          <TouchableOpacity style={styles.row} onPress={openCameraSnap}>
             <View style={styles.iconWrap}>
               <MaterialCommunityIcons name="camera-outline" size={22} color={COLORS.primary} />
             </View>

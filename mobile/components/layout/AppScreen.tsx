@@ -6,6 +6,7 @@ import { SideDrawer } from './SideDrawer';
 import { PlusSheet } from './PlusSheet';
 import { OptionsSheet } from './OptionsSheet';
 import { VideoMode } from '@/components/voice/VideoMode';
+import { CameraSnap } from '@/components/chat/CameraSnap';
 
 const HEADER_HEIGHT = 56;
 
@@ -57,6 +58,7 @@ export function AppScreen({
         <>
           <PlusSheet />
           <VideoMode />
+          <CameraSnap />
         </>
       )}
     </View>

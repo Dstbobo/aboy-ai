@@ -5,6 +5,7 @@ interface UIState {
   plusSheetOpen: boolean;
   voiceModeOpen: boolean;
   videoModeOpen: boolean;
+  cameraSnapOpen: boolean;
   webSearchEnabled: boolean;
   openDrawer: () => void;
   closeDrawer: () => void;
@@ -15,6 +16,8 @@ interface UIState {
   closeVoiceMode: () => void;
   openVideoMode: () => void;
   closeVideoMode: () => void;
+  openCameraSnap: () => void;
+  closeCameraSnap: () => void;
   optionsSheetOpen: boolean;
   openOptionsSheet: () => void;
   closeOptionsSheet: () => void;
@@ -28,6 +31,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   plusSheetOpen: false,
   voiceModeOpen: false,
   videoModeOpen: false,
+  cameraSnapOpen: false,
   webSearchEnabled: true,
   openDrawer: () => set({ drawerOpen: true }),
   closeDrawer: () => set({ drawerOpen: false }),
@@ -38,6 +42,8 @@ export const useUIStore = create<UIState>((set, get) => ({
   closeVoiceMode: () => set({ voiceModeOpen: false }),
   openVideoMode: () => set({ plusSheetOpen: false, videoModeOpen: true }),
   closeVideoMode: () => set({ videoModeOpen: false }),
+  openCameraSnap: () => set({ plusSheetOpen: false, cameraSnapOpen: true }),
+  closeCameraSnap: () => set({ cameraSnapOpen: false }),
   optionsSheetOpen: false,
   openOptionsSheet: () => set({ optionsSheetOpen: true }),
   closeOptionsSheet: () => set({ optionsSheetOpen: false }),
