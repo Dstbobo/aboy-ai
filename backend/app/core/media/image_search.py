@@ -467,6 +467,17 @@ _VISUAL_INTENT = re.compile(
     re.IGNORECASE,
 )
 
+# Clinical *appearance* intent — the user wants to see what something looks like
+# (a rash, lesion, ulcer, condition), not a generic anatomy diagram. These are
+# better served by a real web photo than by the curated anatomy set, so we try
+# web image search FIRST for them.
+_APPEARANCE_INTENT = re.compile(
+    r"\bwhat does .* look like\b|\bappearance of\b|\blooks? like\b|"
+    r"\bclinical (?:photo|image|picture|presentation|appearance)\b|"
+    r"\b(?:rash|lesion|ulcer|blister|pustule|nodule|plaque|wound)s?\b",
+    re.IGNORECASE,
+)
+
 
 async def _log_resolution(concept: str, served: bool) -> None:
     try:
@@ -587,6 +598,15 @@ async def find_medical_image(question: str, role: str) -> dict | None:
     from app.utils.background import fire_and_forget
 
     query = detect_visual_query(question, role)
+    appearance = bool(_APPEARANCE_INTENT.search(question))
+
+    # Clinical-appearance questions ("what does psoriasis look like") want a real
+    # photo, not a generic anatomy diagram — try the web first for these.
+    if appearance:
+        web_img = await web_image_search(question)
+        if web_img:
+            return web_img
+
     if query:
         image = await resolve_concept(query)
         fire_and_forget(_log_resolution(query, image is not None))
