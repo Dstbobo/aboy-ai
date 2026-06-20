@@ -167,8 +167,8 @@ def detect_visual_query(question: str, role: str) -> str | None:
 # (e.g. "lymph node structure"), so gaps still read like a textbook figure.
 _VISUAL_TOPIC_RE = re.compile(
     r"\b(?:anatomy|anatomical|structures?|layers?|cross[- ]?section|histolog\w*|"
-    r"morpholog\w*|labell?ed|diagram|parts of|components of|stages? of|"
-    r"what (?:does|do) .* look like|draw|illustrat\w*)\b",
+    r"morpholog\w*|labell?ed|diagram|parts of|components of|stages? of|steps? of|"
+    r"phases? of|pathway|cycle|what (?:does|do) .* look like|draw|illustrat\w*)\b",
     re.IGNORECASE,
 )
 
