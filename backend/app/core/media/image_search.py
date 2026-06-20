@@ -34,8 +34,11 @@ _TIMEOUT = 5.0
 # so we don't hammer the upstream APIs for concepts that have no image.
 _TTL_HIT = 30 * 24 * 60 * 60
 _TTL_MISS = 24 * 60 * 60
+# Web-image misses are kept only briefly so a transient empty result (slow load,
+# blocked host, momentary Tavily gap) retries soon instead of staying blank.
+_TTL_IMGS_MISS = 20 * 60
 # Bump to invalidate stale Redis image entries (non-English / low-res variants).
-_CACHE_VERSION = "v7"
+_CACHE_VERSION = "v8"
 
 # ── Visual-concept detection ───────────────────────────────────────────────
 # Each entry: a trigger (matched as a whole word, case-insensitive) → the search
@@ -508,6 +511,41 @@ _BAD_IMG_URL = re.compile(
     re.IGNORECASE,
 )
 
+# Stock/watermarked or hotlink-blocked hosts — they render broken/blank in-app
+# (watermark, 403, or no image content-type), so never surface them.
+_BLOCKED_IMG_DOMAINS = (
+    "shutterstock", "vectorstock", "istockphoto", "istock.", "gettyimages",
+    "dreamstime", "freepik", "123rf", "alamy", "depositphotos", "stock.adobe",
+    "adobestock", "researchgate", "academia.edu", "mdpi.com", "pinterest",
+    "slideshare", "slideplayer", "quizlet",
+)
+
+# Strip conversational filler so the web query is the actual subject, e.g.
+# "Give me a picture of Ebola" → "Ebola"; "What does the HIV virus look like" →
+# "HIV virus". A clean subject returns far better, more servable images.
+# Every token requires a trailing space so it only strips WHOLE leading words —
+# never bites into a real word (e.g. it must not turn "Anatomy" into "natomy").
+_FILLER_LEAD = re.compile(
+    r"^\s*(?:please\s+)?(?:(?:can|could|would)\s+)?(?:you\s+)?(?:please\s+)?"
+    r"(?:(?:give|show|get|find|tell|let)\s+)?(?:me\s+)?"
+    r"(?:i\s+(?:want|need)\s+)?(?:to\s+see\s+)?(?:see\s+)?"
+    r"(?:(?:a|an|the)\s+)?"
+    r"(?:(?:picture|image|diagram|photo|illustration|drawing|figure|pic)\s+)?"
+    r"(?:(?:of|for|showing)\s+)?",
+    re.IGNORECASE,
+)
+
+
+def _clean_subject(question: str) -> str:
+    q = question.strip().rstrip("?.!")
+    q = re.sub(r"\bwhat (?:does|do|is|are)\b", " ", q, flags=re.IGNORECASE)
+    q = re.sub(r"\bhow (?:does|do)\b", " ", q, flags=re.IGNORECASE)
+    q = re.sub(r"\blooks?\s+like\b", " ", q, flags=re.IGNORECASE)
+    q = _FILLER_LEAD.sub("", q)
+    q = re.sub(r"\b(?:a|an|the)\b", " ", q, flags=re.IGNORECASE)
+    q = re.sub(r"\s+", " ", q).strip()
+    return q or question.strip()
+
 # Hosts we trust more for medical images (educational / clinical / reference).
 _TRUSTED_DOMAIN_BITS = (
     "wikimedia", "wikipedia", "pubchem", "ncbi", "nih.gov", "who.int", "cdc.gov",
@@ -548,47 +586,61 @@ def _rank_score(cand: dict, terms: set[str]) -> int:
     return relevant + trust + labelled
 
 
-async def _web_candidates(question: str) -> list[dict]:
-    """Image candidates from the open web (ANY site) via Tavily. Unverified —
-    the orchestrator verifies the top-ranked ones load before using them."""
-    from app.core.rag.web_search import _get_tavily_client
-
-    search_q = f"{question} medical diagram labelled anatomy"
+async def _tavily_images(client, query: str) -> tuple[list, list]:
+    """One Tavily image search → (images, results). Never raises."""
     try:
-        client = _get_tavily_client()
         resp = await asyncio.wait_for(
-            client.search(query=search_q, search_depth="basic",
+            client.search(query=query, search_depth="basic",
                           include_images=True, include_image_descriptions=True,
-                          max_results=6),
+                          max_results=8),
             timeout=6.0,
         )
+        return resp.get("images") or [], resp.get("results") or []
     except Exception as exc:
-        logger.warning("web image search failed for %r: %s", question, exc)
-        return []
+        logger.warning("web image search failed for %r: %s", query, exc)
+        return [], []
 
-    images = resp.get("images") or []
-    # Map each image's domain → a real article page on that domain for the link.
+
+async def _web_candidates(question: str) -> list[dict]:
+    """Image candidates from the open web (ANY site) via Tavily. Runs two query
+    variants on the cleaned subject and merges them, so there are enough good,
+    servable candidates after blocked/stock hosts are dropped. Unverified — the
+    orchestrator verifies the top-ranked ones load before using them."""
+    from app.core.rag.web_search import _get_tavily_client
+
+    subject = _clean_subject(question)
+    queries = [f"{subject} diagram", f"{subject} medical illustration labelled"]
+    client = _get_tavily_client()
+    pairs = await asyncio.gather(*[_tavily_images(client, q) for q in queries])
+
     pages: dict[str, str] = {}
-    for r in (resp.get("results") or []):
-        d = _domain(r.get("url", ""))
-        if d and d not in pages:
-            pages[d] = r.get("url")
+    for _, results in pairs:
+        for r in results:
+            d = _domain(r.get("url", ""))
+            if d and d not in pages:
+                pages[d] = r.get("url")
 
     out: list[dict] = []
-    for item in images:
-        url = item.get("url") if isinstance(item, dict) else item
-        desc = item.get("description", "") if isinstance(item, dict) else ""
-        if not url or _BAD_IMG_URL.search(url):
-            continue
-        dom = _domain(url)
-        out.append({
-            "url": url,
-            "title": _clean(desc) or "Medical illustration",
-            "source": dom or "Web",
-            "page_url": pages.get(dom) or url,
-            "_domain": dom,
-            "_desc": desc,
-        })
+    seen_urls: set[str] = set()
+    for images, _ in pairs:
+        for item in images:
+            url = item.get("url") if isinstance(item, dict) else item
+            desc = item.get("description", "") if isinstance(item, dict) else ""
+            if not url or url in seen_urls or _BAD_IMG_URL.search(url):
+                continue
+            dom = _domain(url)
+            # Skip stock/watermarked/hotlink-blocked hosts (render broken in-app).
+            if any(b in dom for b in _BLOCKED_IMG_DOMAINS):
+                continue
+            seen_urls.add(url)
+            out.append({
+                "url": url,
+                "title": _clean(desc) or "Medical illustration",
+                "source": dom or "Web",
+                "page_url": pages.get(dom) or url,
+                "_domain": dom,
+                "_desc": desc,
+            })
     return out
 
 
@@ -646,7 +698,7 @@ async def find_medical_images(question: str, role: str, limit: int = 3) -> list[
 
     # Verify the top candidates load (concurrently, so it stays fast), then take
     # the best that work — ONE per domain so references come from different sites.
-    top = pool[:8]
+    top = pool[:10]
     loads = await asyncio.gather(*[_image_loads(c["url"]) for c in top], return_exceptions=True)
     chosen: list[dict] = []
     seen_domains: set[str] = set()
@@ -669,7 +721,7 @@ async def find_medical_images(question: str, role: str, limit: int = 3) -> list[
         logger.info("IMAGES %.40s -> %d refs (%s)", question, len(chosen),
                     ", ".join(c["source"] for c in chosen))
     else:
-        await cache_set(cache_key, [], _TTL_MISS)
+        await cache_set(cache_key, [], _TTL_IMGS_MISS)  # short — retry soon
         fire_and_forget(_log_coverage_gap(question))
         fire_and_forget(_log_resolution(norm, False))
     return chosen
