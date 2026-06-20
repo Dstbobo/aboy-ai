@@ -14,6 +14,7 @@ Every request increments compact per-day counters (no per-request rows).
 import ipaddress
 import re
 import time
+from io import BytesIO
 from urllib.parse import urlparse
 
 import httpx
@@ -53,6 +54,29 @@ def _is_safe_public_host(host: str) -> bool:
 
 _UA = "AboyAI/1.0 (https://aboyai.com; medical education) image-proxy"
 _PROXY_TTL = 24 * 60 * 60
+
+# React Native's <Image> reliably renders only JPEG/PNG. Many medical images on
+# the web are WebP/GIF/AVIF, which render BLANK on-device. So the proxy transcodes
+# anything that isn't already JPEG/PNG into one of them (first frame for animated;
+# PNG when there's transparency, else JPEG). This makes images show regardless of
+# source format — no app rebuild needed.
+_RENDERABLE = ("image/jpeg", "image/png")
+
+
+def _to_renderable(content: bytes) -> tuple[bytes, str]:
+    """Transcode arbitrary image bytes → (bytes, content_type) as JPEG/PNG.
+    Raises if the bytes are not a decodable image."""
+    from PIL import Image  # local import: only loaded on the fallback path
+
+    im = Image.open(BytesIO(content))
+    im.load()  # force-decode (first frame of an animated GIF/WebP)
+    has_alpha = im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info)
+    out = BytesIO()
+    if has_alpha:
+        im.convert("RGBA").save(out, format="PNG", optimize=True)
+        return out.getvalue(), "image/png"
+    im.convert("RGB").save(out, format="JPEG", quality=85)
+    return out.getvalue(), "image/jpeg"
 
 # ── Simple per-domain outbound rate limiting (token bucket, per process) ──
 _RATE = {"pubchem.ncbi.nlm.nih.gov": 10.0, "upload.wikimedia.org": 30.0, "commons.wikimedia.org": 30.0}
@@ -138,12 +162,23 @@ async def image_resolve(
         raise HTTPException(status_code=502, detail="upstream fetch failed")
 
     ct = resp.headers.get("content-type", "")
-    if resp.status_code != 200 or not ct.startswith("image/"):
+    if resp.status_code != 200:
         fire_and_forget(_log(concept, "fallback", "upstream_error", "failure"))
         raise HTTPException(status_code=502, detail=f"upstream {resp.status_code}")
 
-    fire_and_forget(cache_set(cache_key, {"b": resp.content.hex(), "ct": ct}, _PROXY_TTL))
+    content = resp.content
+    # Normalise to a format RN can render (also validates octet-stream images).
+    if ct not in _RENDERABLE:
+        try:
+            content, ct = _to_renderable(content)
+        except Exception:
+            if not ct.startswith("image/"):
+                fire_and_forget(_log(concept, "fallback", "not_image", "failure"))
+                raise HTTPException(status_code=502, detail="not a renderable image")
+            # It claims to be an image but Pillow couldn't transcode — serve as-is.
+
+    fire_and_forget(cache_set(cache_key, {"b": content.hex(), "ct": ct}, _PROXY_TTL))
     fire_and_forget(_log(concept, "fallback", reason, "success"))
     _ = time.monotonic() - t0
-    return Response(content=resp.content, media_type=ct,
+    return Response(content=content, media_type=ct,
                     headers={"Cache-Control": "public, max-age=604800"})

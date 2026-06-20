@@ -39,6 +39,9 @@ dependencies = [
     # Utilities
     "python-dotenv>=1.0.0",
     "tenacity>=9.0.0",
+
+    # Image transcoding (WebP/GIF/AVIF → JPEG/PNG so RN <Image> can render them)
+    "pillow>=10.4.0",
 ]
 
 [project.optional-dependencies]

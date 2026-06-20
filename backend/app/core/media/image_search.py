@@ -511,13 +511,12 @@ _BAD_IMG_URL = re.compile(
     re.IGNORECASE,
 )
 
-# Stock/watermarked or hotlink-blocked hosts — they render broken/blank in-app
-# (watermark, 403, or no image content-type), so never surface them.
+# Only hosts that serve NO usable image are skipped — login walls / hotlink-403 /
+# HTML pages. Watermarked stock is ALLOWED: we display with a source link and
+# never own the image, so a watermark is not a problem.
 _BLOCKED_IMG_DOMAINS = (
-    "shutterstock", "vectorstock", "istockphoto", "istock.", "gettyimages",
-    "dreamstime", "freepik", "123rf", "alamy", "depositphotos", "stock.adobe",
-    "adobestock", "researchgate", "academia.edu", "mdpi.com", "pinterest",
-    "slideshare", "slideplayer", "quizlet",
+    "researchgate", "academia.edu", "pinterest", "slideshare", "slideplayer",
+    "quizlet", "scribd",
 )
 
 # Strip conversational filler so the web query is the actual subject, e.g.
