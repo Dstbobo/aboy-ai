@@ -532,7 +532,13 @@ _IMG_GENERIC = _STOP_WORDS | {
     "look", "looks", "looking", "like", "want", "wants", "show", "shows", "see",
     "give", "given", "get", "find", "need", "real", "actual", "diagram", "diagrams",
     "draw", "view", "cross", "section", "what", "how", "does", "is", "are",
-    "clinical", "figure", "reference", "please", "labelled", "labeled", "looks",
+    "clinical", "figure", "reference", "please", "labelled", "labeled",
+    # Generic verbs/connectors so a study question still searches on its real
+    # topic, not on filler ("explain X" → X, "difference between X and Y" → X, Y).
+    "explain", "explains", "tell", "about", "more", "define", "definition",
+    "mean", "means", "difference", "between", "compare", "versus", "describe",
+    "understand", "know", "learn", "study", "help", "can", "you", "this", "that",
+    "thank", "thanks", "much", "hello", "hey", "okay", "yes", "good", "great",
 }
 
 
@@ -723,15 +729,12 @@ async def find_medical_images(
     or when the subject can't be determined (better no image than a wrong one)."""
     from app.utils.background import fire_and_forget
 
-    visual = (
-        bool(detect_visual_query(question, role))
-        or is_visual_question(question, role)
-        or bool(_VISUAL_INTENT.search(question))
-    )
-    if not visual:
-        return []
-
-    # The real topic — recovered from history if this turn is a bare follow-up.
+    # Universal (study/textbook feel): attempt an illustration for ANY substantive
+    # question that has a real subject — the user shouldn't have to ask for a
+    # diagram. The hard relevance filter + load verification below ensure an image
+    # only shows when it's genuinely about the topic, so non-visual questions
+    # (e.g. a plain dosage) simply get no image rather than a wrong one.
+    # Conversational greetings never reach here (gated by tier upstream).
     subject = _effective_subject(question, history)
     meaningful = _meaningful_terms(subject)
     if not meaningful:
