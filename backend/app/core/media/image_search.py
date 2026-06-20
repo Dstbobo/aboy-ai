@@ -95,12 +95,13 @@ _CONCEPTS: list[tuple[str, str]] = [
     (r"\bbones?\b|\bskeleton\b|\bfemur\b|\bskull\b", "human skeleton anatomy diagram"),
     (r"\bmuscles?\b", "human muscle anatomy diagram"),
     (r"\bbrachial plexus\b", "brachial plexus diagram"),
-    # Reproductive anatomy (educational diagrams)
-    (r"\bvagina\w*|\bvulva\w*|\bcervix\b|\bcervical canal\b", "female reproductive system anatomy diagram"),
-    (r"\buterus\b|\buterine\b|\bwomb\b|\bendometri\w*|\bfallopian\b|\bovar(?:y|ies)\b", "female reproductive system anatomy diagram"),
-    (r"\bpenis\w*|\btestis\b|\btestes\b|\btesticl\w*|\bscrotum\b|\bprostate\b|\bepididym\w*", "male reproductive system anatomy diagram"),
-    (r"\bbreast\w*|\bmammary\b", "breast anatomy diagram"),
-    (r"\bplacenta\w*|\bfetus\b|\bfoetus\b|\bumbilical cord\b", "placenta fetus anatomy diagram"),
+    # Reproductive anatomy (educational human diagrams; 'human' keeps the
+    # Wikimedia results on people, not insect/animal reproductive anatomy).
+    (r"\bvagina\w*|\bvulva\w*|\bcervix\b|\bcervical canal\b", "human female reproductive system anatomy"),
+    (r"\buterus\b|\buterine\b|\bwomb\b|\bendometri\w*|\bfallopian\b|\bovar(?:y|ies)\b", "human female reproductive system anatomy"),
+    (r"\bpenis\w*|\btestis\b|\btestes\b|\btesticl\w*|\bscrotum\b|\bprostate\b|\bepididym\w*", "human male reproductive system anatomy"),
+    (r"\bbreast\w*|\bmammary\b", "human breast anatomy diagram"),
+    (r"\bplacenta\w*|\bfetus\b|\bfoetus\b|\bumbilical cord\b", "human placenta fetus anatomy diagram"),
     # Equipment / devices / procedures
     (r"\bventilator\b", "mechanical ventilator medical equipment"),
     (r"\bdefibrillator\b", "defibrillator medical equipment"),
