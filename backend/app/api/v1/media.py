@@ -143,7 +143,8 @@ async def image_resolve(
         fire_and_forget(_log(concept, "fallback", reason, "failure"))
         raise HTTPException(status_code=400, detail="URL host not allowed")
 
-    cache_key = f"imgproxy:{u}"
+    # v2: bump invalidates pre-transcode cached bytes (WebP/GIF that rendered blank).
+    cache_key = f"imgproxy:v2:{u}"
     cached = await cache_get(cache_key)
     if cached:
         fire_and_forget(_log(concept, "fallback", reason, "success"))
