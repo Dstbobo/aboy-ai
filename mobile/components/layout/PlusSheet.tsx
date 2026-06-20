@@ -11,7 +11,9 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as ImagePicker from 'expo-image-picker';
 import { useUIStore } from '@/stores/ui.store';
+import { useImageAnalysis } from '@/hooks/useImageAnalysis';
 import { COLORS } from '@/constants/theme';
 
 /**
@@ -23,9 +25,27 @@ export function PlusSheet() {
   const insets = useSafeAreaInsets();
   const { plusSheetOpen, closePlusSheet, webSearchEnabled, toggleWebSearch, openCameraSnap } = useUIStore();
 
+  const analyzeImage = useImageAnalysis();
+
   function comingSoon(feature: string) {
     closePlusSheet();
     Alert.alert(feature, `${feature} attachments are coming soon.`);
+  }
+
+  // Pick an image from the gallery → explain it in the chat (reuses vision).
+  async function pickPhoto() {
+    closePlusSheet();
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('Photos', 'Allow photo access to upload an image for Aboy to explain.');
+      return;
+    }
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.8,
+    });
+    if (res.canceled || !res.assets?.[0]?.uri) return;
+    await analyzeImage(res.assets[0].uri, '🖼️ Explain this image');
   }
 
   return (
@@ -46,7 +66,7 @@ export function PlusSheet() {
             <Text style={styles.rowLabel}>Camera</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.row} onPress={() => comingSoon('Photos')}>
+          <TouchableOpacity style={styles.row} onPress={pickPhoto}>
             <View style={styles.iconWrap}>
               <MaterialCommunityIcons name="image-outline" size={22} color={COLORS.primary} />
             </View>

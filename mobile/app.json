@@ -61,6 +61,12 @@
       "expo-router",
       "expo-secure-store",
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Aboy AI accesses your photos so you can upload a textbook page, diagram, or clinical image for it to explain."
+        }
+      ],
+      [
         "expo-camera",
         {
           "cameraPermission": "Aboy AI uses the camera so you can ask about textbook pages, notes, diagrams, and clinical images."
