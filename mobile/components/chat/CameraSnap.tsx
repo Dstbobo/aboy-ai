@@ -6,15 +6,11 @@ import {
   Image,
   StyleSheet,
   TouchableOpacity,
-  ActivityIndicator,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import * as ImageManipulator from 'expo-image-manipulator';
 import { useUIStore } from '@/stores/ui.store';
-import { useChatStore } from '@/stores/chat.store';
-import { analyzeImage } from '@/services/vision.service';
 import { COLORS } from '@/constants/theme';
 
 /**
@@ -30,13 +26,10 @@ export function CameraSnap() {
   const cameraRef = useRef<CameraView>(null);
 
   const [shot, setShot] = useState<string | null>(null); // captured image uri
-  const [busy, setBusy] = useState(false);
-
-  const { addUserMessage, addAssistantMessage, setLoading } = useChatStore();
+  const setPendingImage = useUIStore((s) => s.setPendingImage);
 
   const reset = useCallback(() => {
     setShot(null);
-    setBusy(false);
   }, []);
 
   const handleClose = useCallback(() => {
@@ -57,28 +50,13 @@ export function CameraSnap() {
     }
   }, []);
 
-  const ask = useCallback(async () => {
-    if (!shot || busy) return;
-    setBusy(true);
-    try {
-      // Downscale so uploads are fast and within the vision size limit.
-      const scaled = await ImageManipulator.manipulateAsync(
-        shot,
-        [{ resize: { width: 1280 } }],
-        { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG },
-      );
-      // Show the question in the conversation, then the explanation.
-      addUserMessage('📷 Explain this image');
-      setLoading(true);
-      handleClose();
-      const text = await analyzeImage(scaled.uri);
-      addAssistantMessage('vis' + Date.now(), text || 'I could not read that image. Please try a clearer photo.', [], false);
-    } catch {
-      addAssistantMessage('viserr' + Date.now(), 'Sorry, I could not analyze that image. Please try again with a clearer, well-lit photo.', [], false);
-    } finally {
-      setLoading(false);
-    }
-  }, [shot, busy, addUserMessage, addAssistantMessage, setLoading, handleClose]);
+  // Attach the captured photo to the input bar so the user can add a note/
+  // question before sending. The chat send handles the actual vision call.
+  const usePhoto = useCallback(() => {
+    if (!shot) return;
+    setPendingImage(shot);
+    handleClose();
+  }, [shot, setPendingImage, handleClose]);
 
   if (!open) return null;
 
@@ -126,19 +104,13 @@ export function CameraSnap() {
         <View style={[styles.controls, { paddingBottom: insets.bottom + 28 }]}>
           {shot ? (
             <View style={styles.previewRow}>
-              <TouchableOpacity style={styles.secondaryBtn} onPress={reset} disabled={busy}>
+              <TouchableOpacity style={styles.secondaryBtn} onPress={reset}>
                 <MaterialCommunityIcons name="camera-retake-outline" size={22} color="#fff" />
                 <Text style={styles.secondaryText}>Retake</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.primaryBtn} onPress={ask} disabled={busy}>
-                {busy ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <>
-                    <MaterialCommunityIcons name="send" size={20} color="#fff" />
-                    <Text style={styles.primaryText}>Ask Aboy</Text>
-                  </>
-                )}
+              <TouchableOpacity style={styles.primaryBtn} onPress={usePhoto}>
+                <MaterialCommunityIcons name="check" size={20} color="#fff" />
+                <Text style={styles.primaryText}>Use photo</Text>
               </TouchableOpacity>
             </View>
           ) : (

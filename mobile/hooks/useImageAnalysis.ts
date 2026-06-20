@@ -15,16 +15,17 @@ export function useImageAnalysis() {
   const setLoading = useChatStore((s) => s.setLoading);
 
   return useCallback(
-    async (uri: string, label = '📷 Explain this image') => {
+    async (uri: string, opts?: { prompt?: string; label?: string }) => {
       try {
         const scaled = await ImageManipulator.manipulateAsync(
           uri,
           [{ resize: { width: 1280 } }],
           { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG },
         );
-        addUserMessage(label);
+        // The user's typed note (if any) becomes the question asked about the image.
+        addUserMessage(opts?.label || '🖼️ Explain this image');
         setLoading(true);
-        const text = await analyzeImage(scaled.uri);
+        const text = await analyzeImage(scaled.uri, opts?.prompt);
         addAssistantMessage(
           'vis' + Date.now(),
           text || 'I could not read that image. Please try a clearer, well-lit photo.',

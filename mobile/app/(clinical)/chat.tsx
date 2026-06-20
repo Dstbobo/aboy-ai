@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Animated,
+  Image,
   Keyboard,
   useWindowDimensions,
 } from 'react-native';
@@ -28,6 +29,7 @@ import { useChatStore } from '@/stores/chat.store';
 import { useOfflineStore } from '@/stores/offline.store';
 import { useUIStore } from '@/stores/ui.store';
 import { streamQuery } from '@/services/streamQuery';
+import { useImageAnalysis } from '@/hooks/useImageAnalysis';
 import { COLORS } from '@/constants/theme';
 import { useAuthStore } from '@/stores/auth.store';
 import { useProgressStore } from '@/stores/progress.store';
@@ -121,6 +123,9 @@ export default function ChatScreen() {
   const voiceModeOpen = useUIStore((s) => s.voiceModeOpen);
   const pendingPrompt = useUIStore((s) => s.pendingPrompt);
   const setPendingPrompt = useUIStore((s) => s.setPendingPrompt);
+  const pendingImage = useUIStore((s) => s.pendingImage);
+  const setPendingImage = useUIStore((s) => s.setPendingImage);
+  const analyzeImageToChat = useImageAnalysis();
 
   // Feature screens (My Project, Cases, …) hand off a prefilled prompt.
   useEffect(() => {
@@ -169,7 +174,27 @@ export default function ChatScreen() {
 
   async function sendMessage(textOverride?: string) {
     const text = (textOverride ?? inputText).trim();
-    if (!text) return;
+    // An attached image only applies to a manual send from the input bar (not to
+    // voice/regenerate which pass textOverride).
+    const image = !textOverride ? pendingImage : null;
+    if (!text && !image) return;
+
+    // Image attached → vision flow, using the typed note as the question.
+    if (image) {
+      setInputText('');
+      setPendingImage(null);
+      abortActiveRequest();
+      pendingScroll.current = true;
+      setTimeout(() => {
+        if (pendingScroll.current) {
+          pendingScroll.current = false;
+          listRef.current?.scrollToEnd({ animated: true });
+        }
+      }, 250);
+      await analyzeImageToChat(image, { prompt: text || undefined, label: text || '🖼️ Explain this image' });
+      return;
+    }
+
     setInputText('');
 
     if (isOffline) {
@@ -414,7 +439,7 @@ export default function ChatScreen() {
   }
 
   const hasChat = messages.length > 0;
-  const isTyping = inputText.trim().length > 0;
+  const isTyping = inputText.trim().length > 0 || !!pendingImage;
   const data = messages; // normal order: oldest -> newest (top -> bottom)
   const firstName = (user?.fullName || '').split(' ')[0];
 
@@ -502,6 +527,22 @@ export default function ChatScreen() {
               style={[styles.inputOverlay, { paddingBottom: kbOpen ? 14 : insets.bottom + 8 }]}
               onLayout={(e) => setBarHeight(e.nativeEvent.layout.height)}
             >
+            {/* Attached image preview (waiting for a note + send) */}
+            {!voiceModeOpen && !isListening && pendingImage && (
+              <View style={styles.attachRow}>
+                <View style={styles.attachWrap}>
+                  <Image source={{ uri: pendingImage }} style={styles.attachThumb} />
+                  <TouchableOpacity
+                    style={styles.attachRemove}
+                    onPress={() => setPendingImage(null)}
+                    hitSlop={8}
+                  >
+                    <MaterialCommunityIcons name="close" size={13} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
             {/* Voice active: dock replaces the input bar, chat stays above */}
             {voiceModeOpen ? (
               <VoiceDock />
@@ -641,6 +682,17 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     paddingHorizontal: 22,
     marginBottom: 6,
+  },
+  attachRow: { flexDirection: 'row', paddingHorizontal: 22, marginBottom: 8 },
+  attachWrap: { position: 'relative' },
+  attachThumb: {
+    width: 64, height: 64, borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.border, backgroundColor: '#fff',
+  },
+  attachRemove: {
+    position: 'absolute', top: -7, right: -7,
+    width: 20, height: 20, borderRadius: 10,
+    backgroundColor: 'rgba(0,0,0,0.7)', alignItems: 'center', justifyContent: 'center',
   },
   waveform: {
     flex: 1,

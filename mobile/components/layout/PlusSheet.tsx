@@ -13,7 +13,6 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { useUIStore } from '@/stores/ui.store';
-import { useImageAnalysis } from '@/hooks/useImageAnalysis';
 import { COLORS } from '@/constants/theme';
 
 /**
@@ -23,16 +22,15 @@ import { COLORS } from '@/constants/theme';
  */
 export function PlusSheet() {
   const insets = useSafeAreaInsets();
-  const { plusSheetOpen, closePlusSheet, webSearchEnabled, toggleWebSearch, openCameraSnap } = useUIStore();
-
-  const analyzeImage = useImageAnalysis();
+  const { plusSheetOpen, closePlusSheet, webSearchEnabled, toggleWebSearch, openCameraSnap, setPendingImage } = useUIStore();
 
   function comingSoon(feature: string) {
     closePlusSheet();
     Alert.alert(feature, `${feature} attachments are coming soon.`);
   }
 
-  // Pick an image from the gallery → explain it in the chat (reuses vision).
+  // Pick an image from the gallery → ATTACH it to the input bar so the user can
+  // add a note/question before sending (sent on the next message).
   async function pickPhoto() {
     closePlusSheet();
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -45,7 +43,7 @@ export function PlusSheet() {
       quality: 0.8,
     });
     if (res.canceled || !res.assets?.[0]?.uri) return;
-    await analyzeImage(res.assets[0].uri, '🖼️ Explain this image');
+    setPendingImage(res.assets[0].uri);
   }
 
   return (

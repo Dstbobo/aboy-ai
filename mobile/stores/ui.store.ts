@@ -23,6 +23,9 @@ interface UIState {
   closeOptionsSheet: () => void;
   pendingPrompt: string | null;
   setPendingPrompt: (p: string | null) => void;
+  // Image attached to the input bar, waiting for the user to add a note and send.
+  pendingImage: string | null;
+  setPendingImage: (uri: string | null) => void;
   toggleWebSearch: () => void;
 }
 
@@ -49,5 +52,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   closeOptionsSheet: () => set({ optionsSheetOpen: false }),
   pendingPrompt: null,
   setPendingPrompt: (pendingPrompt) => set({ pendingPrompt }),
+  pendingImage: null,
+  setPendingImage: (pendingImage) => set({ pendingImage }),
   toggleWebSearch: () => set((s) => ({ webSearchEnabled: !s.webSearchEnabled })),
 }));
