@@ -66,7 +66,7 @@ async def run_rag_pipeline(
 
     # ── Auto medical illustration (kick off early so even cache hits get one) ──
     img_task = (
-        asyncio.create_task(find_medical_image(request.query, user.role))
+        asyncio.create_task(find_medical_image(request.query, user.role, history=request.history))
         if cls.tier != TIER_CONVERSATIONAL
         else None
     )

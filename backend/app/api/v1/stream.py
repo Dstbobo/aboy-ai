@@ -78,7 +78,7 @@ async def _event_generator(
     # ── Auto medical illustration: look it up in parallel; emit after text ──
     # Up to 3 ranked references from different sources, each with its own link.
     img_task = (
-        asyncio.create_task(find_medical_images(request.query, user.role, limit=3))
+        asyncio.create_task(find_medical_images(request.query, user.role, history=request.history, limit=3))
         if cls.tier != TIER_CONVERSATIONAL
         else None
     )

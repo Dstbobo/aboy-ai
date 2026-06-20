@@ -517,7 +517,51 @@ _BAD_IMG_URL = re.compile(
 _BLOCKED_IMG_DOMAINS = (
     "researchgate", "academia.edu", "pinterest", "slideshare", "slideplayer",
     "quizlet", "scribd",
+    # Generic diagramming-tool sites — they return template Sankey/sequence/
+    # flowchart images that have nothing to do with the medical question.
+    "creately", "lucidchart", "lucid.app", "lucid.co", "gliffy", "diagrams.net",
+    "draw.io", "drawio", "smartdraw", "conceptdraw", "edrawsoft", "edraw.",
+    "visual-paradigm", "miro.com", "canva.", "moqups", "zenflowchart",
+    "venngage", "cacoo", "figma.", "diagram.org", "onmail",
 )
+
+# Words that carry NO subject meaning — used so relevance is judged on the real
+# topic ("reproductive", "ebola"), not on filler like "diagram"/"picture"/"want".
+_IMG_GENERIC = _STOP_WORDS | {
+    "picture", "pictures", "image", "images", "photo", "photos", "pic", "pics",
+    "look", "looks", "looking", "like", "want", "wants", "show", "shows", "see",
+    "give", "given", "get", "find", "need", "real", "actual", "diagram", "diagrams",
+    "draw", "view", "cross", "section", "what", "how", "does", "is", "are",
+    "clinical", "figure", "reference", "please", "labelled", "labeled", "looks",
+}
+
+
+def _meaningful_terms(text: str) -> set[str]:
+    """Topic words from text (drops filler/visual words). Used to require that a
+    candidate image is actually ABOUT the subject, not just any 'diagram'."""
+    terms: set[str] = set()
+    for w in re.findall(r"[a-z]+", (text or "").lower()):
+        if len(w) > 2 and w not in _IMG_GENERIC:
+            terms.add(w)
+            terms.update(_SYNONYMS.get(w, []))
+    return terms
+
+
+def _effective_subject(question: str, history: list | None) -> str:
+    """The real subject to search for. For a contextless follow-up like
+    'I want the diagram' or 'how does it look', recover the subject from the most
+    recent prior USER question that actually had one."""
+    subject = _clean_subject(question)
+    if _meaningful_terms(subject):
+        return subject
+    for turn in reversed(history or []):
+        role = turn.get("role") if isinstance(turn, dict) else getattr(turn, "role", None)
+        content = turn.get("content") if isinstance(turn, dict) else getattr(turn, "content", "")
+        if role == "user" and content:
+            prev = _clean_subject(content)
+            if _meaningful_terms(prev):
+                return prev
+    return subject
 
 # Strip conversational filler so the web query is the actual subject, e.g.
 # "Give me a picture of Ebola" → "Ebola"; "What does the HIV virus look like" →
@@ -600,19 +644,18 @@ async def _tavily_images(client, query: str) -> tuple[list, list]:
         return [], []
 
 
-async def _web_candidates(question: str) -> list[dict]:
+async def _web_candidates(subject: str, appearance: bool) -> list[dict]:
     """Image candidates from the open web (ANY site) via Tavily. Runs two query
-    variants on the cleaned subject and merges them, so there are enough good,
-    servable candidates after blocked/stock hosts are dropped. Unverified — the
-    orchestrator verifies the top-ranked ones load before using them."""
+    variants on the subject and merges them, so there are enough good, servable
+    candidates after blocked/stock hosts are dropped. Unverified — the
+    orchestrator verifies + relevance-filters the top-ranked ones."""
     from app.core.rag.web_search import _get_tavily_client
 
-    subject = _clean_subject(question)
     # Pick query modality by intent: clinical-appearance topics (melanoma, a
     # rash, "what does X look like") need real PHOTOS — forcing "diagram" returns
     # almost nothing. Anatomy/structure topics want labelled diagrams. In both
     # cases the bare subject is included as a high-yield second variant.
-    if _APPEARANCE_INTENT.search(question):
+    if appearance:
         queries = [f"{subject} clinical photo", subject]
     else:
         queries = [f"{subject} diagram", subject]
@@ -668,12 +711,16 @@ def _public(cand: dict) -> dict:
     return {k: v for k, v in cand.items() if not k.startswith("_")}
 
 
-async def find_medical_images(question: str, role: str, limit: int = 3) -> list[dict]:
-    """Source-agnostic, ranked image retrieval. Returns up to `limit` real
-    images for a visual question — gathered from the open web AND the curated/
-    learned set, ranked by relevance + source trust + quality, de-duplicated so
-    the references come from DIFFERENT places, each with its own source link.
-    Winners are persisted to the learning KB. Returns [] for non-visual."""
+async def find_medical_images(
+    question: str, role: str, history: list | None = None, limit: int = 3
+) -> list[dict]:
+    """Source-agnostic, ranked image retrieval. Returns up to `limit` real images
+    for a visual question — gathered from the open web AND the curated/learned
+    set, HARD-filtered so every reference is actually about the subject (no random
+    'diagram' images), ranked by relevance + source trust, de-duplicated by site.
+    Recovers the subject from history for contextless follow-ups ('I want the
+    diagram'). Winners are persisted to the learning KB. Returns [] for non-visual
+    or when the subject can't be determined (better no image than a wrong one)."""
     from app.utils.background import fire_and_forget
 
     visual = (
@@ -684,8 +731,15 @@ async def find_medical_images(question: str, role: str, limit: int = 3) -> list[
     if not visual:
         return []
 
-    norm = re.sub(r"\s+", " ", question.strip().lower())[:120]
-    cache_key = f"imgs:{_CACHE_VERSION}:{query_hash(norm)}:{limit}"
+    # The real topic — recovered from history if this turn is a bare follow-up.
+    subject = _effective_subject(question, history)
+    meaningful = _meaningful_terms(subject)
+    if not meaningful:
+        # Couldn't tell what the user wants a picture OF — don't guess.
+        return []
+    appearance = bool(_APPEARANCE_INTENT.search(question))
+
+    cache_key = f"imgs:{_CACHE_VERSION}:{query_hash(subject)}:{int(appearance)}:{limit}"
     cached = await cache_get(cache_key)
     if cached is not None:
         return cached or []
@@ -693,14 +747,21 @@ async def find_medical_images(question: str, role: str, limit: int = 3) -> list[
     # Gather from all sources in parallel — Wikimedia is just one candidate now.
     curated, web = await asyncio.gather(
         _curated_candidate(question, role),
-        _web_candidates(question),
+        _web_candidates(subject, appearance),
     )
-    pool: list[dict] = list(web)
+
+    # HARD relevance filter on web candidates: the image must actually be ABOUT
+    # the subject (drops generic Sankey/sequence/product-launch diagrams that
+    # merely matched the word "diagram"). The curated candidate is concept-matched
+    # already, so it's trusted without this check.
+    pool: list[dict] = [
+        c for c in web
+        if _has_term(f"{c.get('url','')} {c.get('title','')} {c.get('_desc','')}", meaningful)
+    ]
     if curated:
         pool.append(curated)
 
-    terms = _key_terms(question)
-    pool.sort(key=lambda c: _rank_score(c, terms), reverse=True)
+    pool.sort(key=lambda c: _rank_score(c, meaningful), reverse=True)
 
     # Verify the top candidates load (concurrently, so it stays fast), then take
     # the best that work — ONE per domain so references come from different sites.
@@ -722,14 +783,14 @@ async def find_medical_images(question: str, role: str, limit: int = 3) -> list[
     if chosen:
         await cache_set(cache_key, chosen, _TTL_HIT)
         # LEARN the best one so it's permanent + instant next time.
-        fire_and_forget(_db_put(f"webq:{norm}", chosen[0]))
-        fire_and_forget(_log_resolution(norm, True))
-        logger.info("IMAGES %.40s -> %d refs (%s)", question, len(chosen),
+        fire_and_forget(_db_put(f"webq:{subject}", chosen[0]))
+        fire_and_forget(_log_resolution(subject, True))
+        logger.info("IMAGES subj=%.40s -> %d refs (%s)", subject, len(chosen),
                     ", ".join(c["source"] for c in chosen))
     else:
         await cache_set(cache_key, [], _TTL_IMGS_MISS)  # short — retry soon
         fire_and_forget(_log_coverage_gap(question))
-        fire_and_forget(_log_resolution(norm, False))
+        fire_and_forget(_log_resolution(subject, False))
     return chosen
 
 
@@ -742,9 +803,9 @@ async def _log_coverage_gap(question: str) -> None:
         pass
 
 
-async def find_medical_image(question: str, role: str) -> dict | None:
+async def find_medical_image(question: str, role: str, history: list | None = None) -> dict | None:
     """Single best image — back-compat for the non-streaming pipeline."""
-    imgs = await find_medical_images(question, role, limit=1)
+    imgs = await find_medical_images(question, role, history=history, limit=1)
     return imgs[0] if imgs else None
 
 
