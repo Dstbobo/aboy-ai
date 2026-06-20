@@ -494,9 +494,12 @@ export default function ChatScreen() {
                 conversation scrolls behind the translucent card. Sits flush on
                 the keyboard when open (KAV pads the box), clears the safe area
                 when closed. */}
+            {/* paddingBottom = the gap below the input bar. When the keyboard is
+                open it lifts the bar a clear space ABOVE the keyboard (breathing
+                room, no collision); when closed it floats above the nav bar. */}
             <KeyboardStickyView
               offset={{ closed: 0, opened: 0 }}
-              style={[styles.inputOverlay, { paddingBottom: kbOpen ? 0 : insets.bottom + 8 }]}
+              style={[styles.inputOverlay, { paddingBottom: kbOpen ? 14 : insets.bottom + 8 }]}
               onLayout={(e) => setBarHeight(e.nativeEvent.layout.height)}
             >
             {/* Voice active: dock replaces the input bar, chat stays above */}
