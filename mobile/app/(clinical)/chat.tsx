@@ -74,6 +74,9 @@ export default function ChatScreen() {
   // leaving the screen below it for the AI answer to flow into.
   const bottomSpacer = Math.round(screenHeight * 0.7);
   const [inputText, setInputText] = useState('');
+  // Live research status (Understanding → Searching → Analyzing → Generating).
+  // Shown beside the thinking dots until the first answer token streams in.
+  const [research, setResearch] = useState<string | null>(null);
 
   const user = useAuthStore((s) => s.user);
   const {
@@ -160,6 +163,7 @@ export default function ChatScreen() {
     addUserMessage(text);
     useProgressStore.getState().recordQuery(text); // learning progress
     setLoading(true);
+    setResearch('Thinking'); // calm initial state until the first status arrives
     // Scroll the just-sent message up to the top; the tall bottom spacer means
     // scrollToEnd lands the user message near the top with room for the answer.
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 60);
@@ -188,10 +192,15 @@ export default function ChatScreen() {
           if (cancelled) return;
           if (!sessionId) setSession(sid);
         },
+        onStatus: (_stage, label) => {
+          if (cancelled || started) return;
+          setResearch(label); // show the real step Aboy is on right now
+        },
         onToken: (chunk) => {
           if (cancelled) return;
           if (!started) {
             started = true;
+            setResearch(null); // answer is arriving — drop the research panel
             startStreaming(aiId); // first token → swap the thinking dots for the bubble
           }
           appendStream(chunk);
@@ -212,6 +221,7 @@ export default function ChatScreen() {
             addAssistantMessage('err' + Date.now(), 'No response received. Please try again.', [], false);
           }
           clearIfCurrent();
+          setResearch(null);
           setLoading(false);
         },
         onError: (e: any) => {
@@ -227,6 +237,7 @@ export default function ChatScreen() {
           if (started) finaliseStream(aiId, [], false);
           else addAssistantMessage('err' + Date.now(), friendly, [], false);
           clearIfCurrent();
+          setResearch(null);
           setLoading(false);
         },
       });
@@ -238,6 +249,7 @@ export default function ChatScreen() {
         addAssistantMessage('err' + Date.now(), 'Network error — please check your connection.', [], false);
       }
       clearIfCurrent();
+      setResearch(null);
       setLoading(false);
     }
   }
@@ -259,6 +271,7 @@ export default function ChatScreen() {
     // Stop the stream; keep whatever text already arrived. Works even if the
     // request is still in its async setup window (orphan-proof).
     abortActiveRequest();
+    setResearch(null);
     setLoading(false);
   }
 
@@ -418,7 +431,7 @@ export default function ChatScreen() {
                 style={styles.flex}
                 keyboardShouldPersistTaps="handled"
                 // Thinking dots show only until the first token streams in.
-                ListFooterComponent={isLoading && !messages.some((m) => m.isStreaming) ? <ThinkingDots /> : null}
+                ListFooterComponent={isLoading && !messages.some((m) => m.isStreaming) ? <ThinkingDots label={research} /> : null}
                 keyExtractor={(m) => m.id}
                 // Top: clear the floating header. Bottom: a tall spacer + input
                 // height so the newest USER message can scroll up near the top,

@@ -55,8 +55,18 @@ async def _event_generator(
     emergency_triggered = check_emergency(request.query)
     cls = classify(request.query)
 
+    def status(stage: str, label: str) -> str:
+        """A research-progress event so the user SEES Aboy work (understand →
+        search references → search diagrams → analyse → answer) instead of a
+        silent wait. Each one maps to a real pipeline step actually running."""
+        return f"data: {json.dumps({'type': 'status', 'stage': stage, 'label': label})}\n\n"
+
     # Tell the client the session id immediately.
     yield f"data: {json.dumps({'type': 'start', 'session_id': session_id, 'tier': cls.tier})}\n\n"
+
+    # Aboy "thinks" first: it has read and classified the question.
+    if cls.tier != TIER_CONVERSATIONAL:
+        yield status("understanding", "Understanding your question")
 
     # ── Daily token budget (beta) ──
     if await is_exhausted(user.user_id):
@@ -76,13 +86,21 @@ async def _event_generator(
     reranked: list[dict] = []
     web_results: list[dict] = []
     if cls.tier == TIER_STATIC:
+        yield status("searching_refs", "Searching references")
+        if img_task is not None:
+            yield status("searching_diagrams", "Searching diagrams")
         reranked = rerank_chunks(await _vector_retrieve(request.query))
+        yield status("analyzing", "Analyzing sources")
     elif cls.tier != TIER_CONVERSATIONAL:
+        yield status("searching_refs", "Searching references")
+        if img_task is not None:
+            yield status("searching_diagrams", "Searching diagrams")
         raw, web_results = await asyncio.gather(
             _vector_retrieve(request.query),
             web_search(request.query),
         )
         reranked = rerank_chunks(raw)
+        yield status("analyzing", "Analyzing sources")
 
     # ── Model + length tiering ──
     haiku, sonnet = settings.anthropic_haiku_model, settings.anthropic_model
@@ -105,6 +123,9 @@ async def _event_generator(
     if cls.tier == TIER_CONVERSATIONAL:
         system_prompt += " This is a brief conversational message — reply naturally and concisely without citations."
     user_prompt = build_user_prompt(request.query, context, request.history)
+
+    if cls.tier != TIER_CONVERSATIONAL:
+        yield status("generating", "Generating answer")
 
     full_text = ""
     usage: dict = {}

@@ -6,6 +6,7 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000';
 
 export interface StreamHandlers {
   onStart?: (sessionId: string, tier: number) => void;
+  onStatus?: (stage: string, label: string) => void;
   onToken: (text: string) => void;
   onMeta?: (citations: Citation[], emergency: boolean, sessionId: string, auditId?: string) => void;
   onImage?: (image: MedicalImage) => void;
@@ -69,6 +70,7 @@ export async function streamQuery(
       try {
         const msg = JSON.parse(payload);
         if (msg.type === 'start') h.onStart?.(msg.session_id, msg.tier);
+        else if (msg.type === 'status') h.onStatus?.(msg.stage, msg.label);
         else if (msg.type === 'text') h.onToken(msg.content);
         else if (msg.type === 'image') h.onImage?.(msg.image as MedicalImage);
         else if (msg.type === 'meta') h.onMeta?.(msg.citations ?? [], !!msg.emergency_triggered, msg.session_id, msg.audit_id);
