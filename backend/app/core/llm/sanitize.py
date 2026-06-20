@@ -61,9 +61,18 @@ _CLEANUP = [
 _RECAP = re.compile(r"(^|[.!?]\s+|\n)([a-z])")
 
 
+# Inline citation markers like "[Source 1]", "[Web 2]", "[1, 2]" → removed so the
+# prose reads clean (ChatGPT/Gemini style); the app shows the real sources below.
+_INLINE_CITE_RE = re.compile(
+    r"\s*\[\s*(?:sources?|web|refs?|citations?)?\s*\d+(?:\s*[,&]\s*\d+)*\s*\]",
+    re.IGNORECASE,
+)
+
+
 def strip_image_phrases(text: str) -> str:
     if not text:
         return text
+    text = _INLINE_CITE_RE.sub("", text)
     for pat, repl in _IMG_PATTERNS:
         text = pat.sub(repl, text)
     for pat, repl in _CLEANUP:
