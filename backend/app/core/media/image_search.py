@@ -609,7 +609,14 @@ async def _web_candidates(question: str) -> list[dict]:
     from app.core.rag.web_search import _get_tavily_client
 
     subject = _clean_subject(question)
-    queries = [f"{subject} diagram", f"{subject} medical illustration labelled"]
+    # Pick query modality by intent: clinical-appearance topics (melanoma, a
+    # rash, "what does X look like") need real PHOTOS — forcing "diagram" returns
+    # almost nothing. Anatomy/structure topics want labelled diagrams. In both
+    # cases the bare subject is included as a high-yield second variant.
+    if _APPEARANCE_INTENT.search(question):
+        queries = [f"{subject} clinical photo", subject]
+    else:
+        queries = [f"{subject} diagram", subject]
     client = _get_tavily_client()
     pairs = await asyncio.gather(*[_tavily_images(client, q) for q in queries])
 
