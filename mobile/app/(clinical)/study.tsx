@@ -7,6 +7,7 @@ import { useProgressStore } from '@/stores/progress.store';
 import { useAuthStore } from '@/stores/auth.store';
 import { ROLE_LABELS } from '@/constants/roles';
 import { useChatStore } from '@/stores/chat.store';
+import { useUIStore } from '@/stores/ui.store';
 import { COLORS } from '@/constants/theme';
 
 /**
@@ -18,15 +19,20 @@ export default function StudyScreen() {
   const user = useAuthStore((s) => s.user);
   const { topics, totalQueries, strongTopics, weakTopics } = useProgressStore();
   const clearChat = useChatStore((s) => s.clearChat);
+  const setPendingPrompt = useUIStore((s) => s.setPendingPrompt);
   const topicList = Object.values(topics).sort((a, b) => b.queries - a.queries);
   const strong = strongTopics();
   const weak = weakTopics();
+  // Most recently studied topic → "pick up where you left off".
+  const resume = Object.values(topics)
+    .filter((t) => t.lastStudied)
+    .sort((a, b) => b.lastStudied.localeCompare(a.lastStudied))[0];
 
   function studyTopic(topic: string) {
     clearChat();
+    // Prefill the chat so tapping a topic actually starts studying it.
+    setPendingPrompt(`Help me study ${topic}. Start with the key concepts I should know, then quiz me.`);
     router.push('/(clinical)/chat');
-    // Small delay so the chat screen mounts before we could prefill; the user
-    // just types — keeping this simple and predictable.
   }
 
   return (
@@ -49,6 +55,20 @@ export default function StudyScreen() {
             <Text style={styles.summaryLabel}>{ROLE_LABELS[user?.role ?? ''] ?? 'Role'}</Text>
           </View>
         </View>
+
+        {/* Pick up where you left off */}
+        {resume && (
+          <TouchableOpacity style={styles.resumeCard} onPress={() => studyTopic(resume.topic)} activeOpacity={0.85}>
+            <MaterialCommunityIcons name="play-circle-outline" size={24} color={COLORS.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.resumeTitle}>Pick up where you left off</Text>
+              <Text style={styles.resumeSub}>
+                {resume.topic} · last {new Date(resume.lastStudied).toLocaleDateString()}
+              </Text>
+            </View>
+            <MaterialCommunityIcons name="chevron-right" size={20} color={COLORS.textSecondary} />
+          </TouchableOpacity>
+        )}
 
         {/* Strong areas */}
         <Text style={styles.sectionTitle}>💪 Strong areas</Text>
@@ -116,6 +136,13 @@ const styles = StyleSheet.create({
   summaryDivider: { width: StyleSheet.hairlineWidth, backgroundColor: COLORS.border },
   summaryNum: { fontSize: 22, fontWeight: '800', color: COLORS.primary },
   summaryLabel: { fontSize: 12, color: COLORS.textSecondary, marginTop: 3, textAlign: 'center' },
+  resumeCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: COLORS.secondary, borderRadius: 14, padding: 14, marginTop: 10,
+    borderWidth: 1, borderColor: '#bfe3d2',
+  },
+  resumeTitle: { fontSize: 14.5, fontWeight: '700', color: COLORS.text },
+  resumeSub: { fontSize: 12.5, color: COLORS.textSecondary, marginTop: 2 },
   sectionTitle: { fontSize: 16, fontWeight: '700', color: COLORS.text, marginTop: 18, marginBottom: 8 },
   topicRow: {
     backgroundColor: COLORS.surface,

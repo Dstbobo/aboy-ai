@@ -11,6 +11,7 @@ const NEW_CHAT: DrawerItem   = { key: 'new',        label: 'New Chat',    icon: 
 const HISTORY: DrawerItem    = { key: 'history',    label: 'History',     icon: 'history',            route: '/(clinical)/history' };
 const STUDY: DrawerItem      = { key: 'study',      label: 'Study',       icon: 'book-open-variant',  route: '/(clinical)/study' };
 const FLASHCARDS: DrawerItem = { key: 'flashcards', label: 'Flashcards',  icon: 'cards-outline',      route: '/(clinical)/flashcards' };
+const QUIZ: DrawerItem       = { key: 'quiz',       label: 'Quiz',        icon: 'help-circle-outline', route: '/(clinical)/chat' };
 const PROJECT: DrawerItem    = { key: 'project',    label: 'My Project',  icon: 'file-document-edit-outline', route: '/(clinical)/project' };
 const GUIDELINES: DrawerItem = { key: 'guidelines', label: 'Guidelines',  icon: 'clipboard-text',     route: '/(clinical)/guidelines' };
 const CASES: DrawerItem      = { key: 'cases',      label: 'Cases',       icon: 'stethoscope',        route: '/(clinical)/cases' };
@@ -22,7 +23,7 @@ const AUDIT: DrawerItem      = { key: 'audit',      label: 'Audit Log',   icon: 
 // Every user gets the same full toolkit — role NEVER restricts features.
 // Adaptation happens in the answers, not in access. Admin adds admin-only tools.
 const COMMON_ITEMS: DrawerItem[] = [
-  NEW_CHAT, HISTORY, STUDY, FLASHCARDS, PROJECT, GUIDELINES, CASES, LITERATURE, REPORTS,
+  NEW_CHAT, HISTORY, STUDY, FLASHCARDS, QUIZ, PROJECT, GUIDELINES, CASES, LITERATURE, REPORTS,
 ];
 
 export function getDrawerItems(role: UserRole): DrawerItem[] {
