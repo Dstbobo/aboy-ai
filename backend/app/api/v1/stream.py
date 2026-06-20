@@ -153,6 +153,12 @@ async def _event_generator(
         try:
             images = await img_task
             if images:
+                # Emit BOTH: the single `image` event for older app builds that
+                # haven't picked up the OTA yet (they show the best one), and the
+                # new `images` list for updated builds (they show the gallery and
+                # ignore the single one). This way NO client loses images during
+                # the rollout.
+                yield f"data: {json.dumps({'type': 'image', 'image': images[0]})}\n\n"
                 yield f"data: {json.dumps({'type': 'images', 'images': images})}\n\n"
         except Exception:
             pass
