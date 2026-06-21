@@ -27,7 +27,6 @@ export function SideDrawer() {
   const router = useRouter();
   const pathname = usePathname();
   const { drawerOpen, closeDrawer } = useUIStore();
-  const setPendingPrompt = useUIStore((s) => s.setPendingPrompt);
   const user = useAuthStore((s) => s.user);
   const clearChat = useChatStore((s) => s.clearChat);
 
@@ -56,16 +55,6 @@ export function SideDrawer() {
     closeDrawer();
     if (key === 'new') {
       clearChat();
-      router.replace('/(clinical)/chat');
-      return;
-    }
-    if (key === 'quiz') {
-      // Start a fresh quiz session in chat (prefilled prompt; user taps send).
-      clearChat();
-      setPendingPrompt(
-        'Quiz me with 5 short questions, one at a time, on a topic I have been studying. ' +
-        'After each answer, tell me if I am right and explain briefly.',
-      );
       router.replace('/(clinical)/chat');
       return;
     }
