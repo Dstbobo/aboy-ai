@@ -45,7 +45,7 @@ export default function FlashcardsScreen() {
   const messages = useChatStore((s) => s.messages);
   const [flashcards, setFlashcards] = useState<Flashcard[]>(() => extractFlashcards(messages));
   const [activeIndex, setActiveIndex] = useState(0);
-  const [mode, setMode] = useState<'list' | 'quiz'>('list');
+  const [mode, setMode] = useState<'list' | 'review'>('list');
 
   const rated = flashcards.filter((c) => c.rating).length;
 
@@ -77,7 +77,7 @@ export default function FlashcardsScreen() {
     );
   }
 
-  if (mode === 'quiz') {
+  if (mode === 'review') {
     const card = flashcards[activeIndex];
     if (!card) return null;
 
@@ -154,8 +154,8 @@ export default function FlashcardsScreen() {
     <View style={styles.flex}>
       <View style={styles.listHeader}>
         <Text style={styles.listTitle}>{flashcards.length} flashcards</Text>
-        <Button mode="contained" onPress={() => { setActiveIndex(0); setMode('quiz'); }}>
-          Start Quiz
+        <Button mode="contained" onPress={() => { setActiveIndex(0); setMode('review'); }}>
+          Review cards
         </Button>
       </View>
 
