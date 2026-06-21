@@ -26,6 +26,9 @@ interface UIState {
   // Image attached to the input bar, waiting for the user to add a note and send.
   pendingImage: string | null;
   setPendingImage: (uri: string | null) => void;
+  // Document (PDF/Word/text) attached to the input bar, waiting for note + send.
+  pendingFile: { uri: string; name: string; mime: string } | null;
+  setPendingFile: (file: { uri: string; name: string; mime: string } | null) => void;
   toggleWebSearch: () => void;
 }
 
@@ -54,5 +57,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   setPendingPrompt: (pendingPrompt) => set({ pendingPrompt }),
   pendingImage: null,
   setPendingImage: (pendingImage) => set({ pendingImage }),
+  pendingFile: null,
+  setPendingFile: (pendingFile) => set({ pendingFile }),
   toggleWebSearch: () => set((s) => ({ webSearchEnabled: !s.webSearchEnabled })),
 }));

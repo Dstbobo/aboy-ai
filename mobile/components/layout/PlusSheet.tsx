@@ -12,6 +12,7 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import { useUIStore } from '@/stores/ui.store';
 import { COLORS } from '@/constants/theme';
 
@@ -22,11 +23,24 @@ import { COLORS } from '@/constants/theme';
  */
 export function PlusSheet() {
   const insets = useSafeAreaInsets();
-  const { plusSheetOpen, closePlusSheet, webSearchEnabled, toggleWebSearch, openCameraSnap, setPendingImage } = useUIStore();
+  const { plusSheetOpen, closePlusSheet, webSearchEnabled, toggleWebSearch, openCameraSnap, setPendingImage, setPendingFile } = useUIStore();
 
   function comingSoon(feature: string) {
     closePlusSheet();
     Alert.alert(feature, `${feature} attachments are coming soon.`);
+  }
+
+  // Pick a document (PDF/Word/text) → ATTACH it to the input bar so the user can
+  // add a note/question before sending.
+  async function pickFile() {
+    closePlusSheet();
+    const res = await DocumentPicker.getDocumentAsync({
+      type: ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'],
+      copyToCacheDirectory: true,
+    });
+    if (res.canceled || !res.assets?.[0]) return;
+    const f = res.assets[0];
+    setPendingFile({ uri: f.uri, name: f.name ?? 'document', mime: f.mimeType ?? 'application/octet-stream' });
   }
 
   // Pick an image from the gallery → ATTACH it to the input bar so the user can
@@ -71,7 +85,7 @@ export function PlusSheet() {
             <Text style={styles.rowLabel}>Photos</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.row} onPress={() => comingSoon('Files')}>
+          <TouchableOpacity style={styles.row} onPress={pickFile}>
             <View style={styles.iconWrap}>
               <MaterialCommunityIcons name="file-outline" size={22} color={COLORS.primary} />
             </View>

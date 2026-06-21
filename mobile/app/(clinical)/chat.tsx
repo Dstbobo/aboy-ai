@@ -30,6 +30,7 @@ import { useOfflineStore } from '@/stores/offline.store';
 import { useUIStore } from '@/stores/ui.store';
 import { streamQuery } from '@/services/streamQuery';
 import { useImageAnalysis } from '@/hooks/useImageAnalysis';
+import { analyzeDocument } from '@/services/document.service';
 import { COLORS } from '@/constants/theme';
 import { useAuthStore } from '@/stores/auth.store';
 import { useProgressStore } from '@/stores/progress.store';
@@ -125,6 +126,8 @@ export default function ChatScreen() {
   const setPendingPrompt = useUIStore((s) => s.setPendingPrompt);
   const pendingImage = useUIStore((s) => s.pendingImage);
   const setPendingImage = useUIStore((s) => s.setPendingImage);
+  const pendingFile = useUIStore((s) => s.pendingFile);
+  const setPendingFile = useUIStore((s) => s.setPendingFile);
   const analyzeImageToChat = useImageAnalysis();
 
   // Feature screens (My Project, Cases, …) hand off a prefilled prompt.
@@ -174,10 +177,40 @@ export default function ChatScreen() {
 
   async function sendMessage(textOverride?: string) {
     const text = (textOverride ?? inputText).trim();
-    // An attached image only applies to a manual send from the input bar (not to
-    // voice/regenerate which pass textOverride).
+    // An attached image/file only applies to a manual send from the input bar
+    // (not to voice/regenerate which pass textOverride).
     const image = !textOverride ? pendingImage : null;
-    if (!text && !image) return;
+    const file = !textOverride ? pendingFile : null;
+    if (!text && !image && !file) return;
+
+    // Document attached → extract + explain, using the typed note as the question.
+    if (file) {
+      setInputText('');
+      setPendingFile(null);
+      abortActiveRequest();
+      addUserMessage(text || `📄 ${file.name}`);
+      setLoading(true);
+      pendingScroll.current = true;
+      setTimeout(() => {
+        if (pendingScroll.current) {
+          pendingScroll.current = false;
+          listRef.current?.scrollToEnd({ animated: true });
+        }
+      }, 250);
+      try {
+        const ans = await analyzeDocument(file.uri, file.name, file.mime, text || undefined);
+        addAssistantMessage('doc' + Date.now(), ans || 'I could not read that document.', [], false);
+      } catch (e: any) {
+        const detail = e?.response?.data?.detail;
+        addAssistantMessage('docerr' + Date.now(),
+          typeof detail === 'string' ? detail
+          : 'Sorry, I could not read that document. Please try a PDF, Word (.docx) or text file with selectable text.',
+          [], false);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
 
     // Image attached → vision flow, using the typed note as the question.
     if (image) {
@@ -439,7 +472,7 @@ export default function ChatScreen() {
   }
 
   const hasChat = messages.length > 0;
-  const isTyping = inputText.trim().length > 0 || !!pendingImage;
+  const isTyping = inputText.trim().length > 0 || !!pendingImage || !!pendingFile;
   const data = messages; // normal order: oldest -> newest (top -> bottom)
   const firstName = (user?.fullName || '').split(' ')[0];
 
@@ -538,6 +571,19 @@ export default function ChatScreen() {
                     hitSlop={8}
                   >
                     <MaterialCommunityIcons name="close" size={13} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
+            {/* Attached document preview (waiting for a note + send) */}
+            {!voiceModeOpen && !isListening && pendingFile && (
+              <View style={styles.attachRow}>
+                <View style={styles.fileChip}>
+                  <MaterialCommunityIcons name="file-document-outline" size={18} color={COLORS.primary} />
+                  <Text style={styles.fileChipText} numberOfLines={1}>{pendingFile.name}</Text>
+                  <TouchableOpacity onPress={() => setPendingFile(null)} hitSlop={8}>
+                    <MaterialCommunityIcons name="close" size={16} color={COLORS.textSecondary} />
                   </TouchableOpacity>
                 </View>
               </View>
@@ -694,6 +740,12 @@ const styles = StyleSheet.create({
     width: 20, height: 20, borderRadius: 10,
     backgroundColor: 'rgba(0,0,0,0.7)', alignItems: 'center', justifyContent: 'center',
   },
+  fileChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: COLORS.secondary, borderRadius: 12, paddingVertical: 9, paddingHorizontal: 12,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.border, maxWidth: '85%',
+  },
+  fileChipText: { flex: 1, fontSize: 13.5, color: COLORS.text, fontWeight: '500' },
   waveform: {
     flex: 1,
     flexDirection: 'row',
