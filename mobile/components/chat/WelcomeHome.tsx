@@ -44,7 +44,7 @@ export function WelcomeHome(_props: { onPick: (prompt: string) => void }) {
   }
 
   return (
-    <View style={styles.center}>
+    <View style={styles.top}>
       <Text style={styles.greeting}>{w?.greeting ?? 'Hello'}</Text>
       {!!w?.message && <Text style={styles.message}>{w.message}</Text>}
     </View>
@@ -53,6 +53,9 @@ export function WelcomeHome(_props: { onPick: (prompt: string) => void }) {
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
+  // Greeting sits in the UPPER area (not vertically centered) so it stays well
+  // above the input bar and is never covered when the keyboard opens.
+  top: { flex: 1, alignItems: 'center', justifyContent: 'flex-start', paddingTop: 36, paddingHorizontal: 32 },
   greeting: { fontSize: 26, fontWeight: '800', color: COLORS.text, textAlign: 'center' },
   message: { fontSize: 15, color: COLORS.textSecondary, textAlign: 'center', marginTop: 10, lineHeight: 22 },
 });
