@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -16,8 +16,18 @@ import { COLORS } from '@/constants/theme';
 
 type Phase = 'setup' | 'loading' | 'active' | 'done';
 
+// Seconds allowed per question; runs out → the answer is revealed (no point).
+const QUESTION_SECONDS = 30;
+
+function fmt(secs: number): string {
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
 export default function QuizScreen() {
   const topics = useProgressStore((s) => s.topics);
+  const recordQuiz = useProgressStore((s) => s.recordQuiz);
   const suggestions = Object.values(topics)
     .sort((a, b) => b.queries - a.queries)
     .slice(0, 6)
@@ -29,8 +39,23 @@ export default function QuizScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const [index, setIndex] = useState(0);
-  const [picked, setPicked] = useState<number | null>(null); // selected option this question
+  const [picked, setPicked] = useState<number | null>(null); // selected option (-1 = timed out)
   const [score, setScore] = useState(0);
+  const [timeLeft, setTimeLeft] = useState(QUESTION_SECONDS);
+  const [elapsed, setElapsed] = useState(0);
+  const startedAt = useRef(0);
+  const saved = useRef(false);
+
+  // Per-question countdown: tick every second while unanswered; at 0, reveal.
+  useEffect(() => {
+    if (phase !== 'active' || picked !== null) return;
+    if (timeLeft <= 0) {
+      setPicked(-1); // timed out — no point scored
+      return;
+    }
+    const t = setTimeout(() => setTimeLeft((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [phase, picked, timeLeft]);
 
   async function start(t: string) {
     setError(null);
@@ -42,6 +67,9 @@ export default function QuizScreen() {
       setIndex(0);
       setPicked(null);
       setScore(0);
+      setTimeLeft(QUESTION_SECONDS);
+      startedAt.current = Date.now();
+      saved.current = false;
       setPhase('active');
     } catch {
       setError('Could not generate a quiz. Please try again.');
@@ -58,10 +86,17 @@ export default function QuizScreen() {
   function next() {
     if (!quiz) return;
     if (index + 1 >= quiz.questions.length) {
+      // Save the result into Study progress (once).
+      if (!saved.current) {
+        saved.current = true;
+        setElapsed(Math.round((Date.now() - startedAt.current) / 1000));
+        recordQuiz(quiz.topic || topic, score, quiz.questions.length);
+      }
       setPhase('done');
     } else {
       setIndex((i) => i + 1);
       setPicked(null);
+      setTimeLeft(QUESTION_SECONDS);
     }
   }
 
@@ -133,6 +168,7 @@ export default function QuizScreen() {
           <Text style={styles.scoreNum}>{score}/{total}</Text>
           <Text style={styles.scorePct}>{pct}%</Text>
           <Text style={styles.scoreMsg}>{msg}</Text>
+          <Text style={styles.scoreMeta}>Time {fmt(elapsed)} · saved to your Study progress</Text>
           <TouchableOpacity style={styles.primaryBtn} onPress={() => start(topic)}>
             <MaterialCommunityIcons name="refresh" size={20} color="#fff" />
             <Text style={styles.primaryText}>New quiz</Text>
@@ -152,7 +188,21 @@ export default function QuizScreen() {
     return (
       <AppScreen title="Quiz">
         <ScrollView contentContainerStyle={styles.content}>
-          <Text style={styles.progress}>Question {index + 1} of {quiz.questions.length}</Text>
+          <View style={styles.qHeader}>
+            <Text style={styles.progress}>Question {index + 1} of {quiz.questions.length}</Text>
+            {!answered ? (
+              <View style={[styles.timer, timeLeft <= 5 && styles.timerLow]}>
+                <MaterialCommunityIcons
+                  name="timer-outline"
+                  size={14}
+                  color={timeLeft <= 5 ? COLORS.error : COLORS.textSecondary}
+                />
+                <Text style={[styles.timerText, timeLeft <= 5 && styles.timerTextLow]}>{timeLeft}s</Text>
+              </View>
+            ) : picked === -1 ? (
+              <Text style={styles.timeUp}>Time's up</Text>
+            ) : null}
+          </View>
           <Text style={styles.question}>{q.question}</Text>
 
           {q.options.map((opt, i) => {
@@ -220,7 +270,17 @@ const styles = StyleSheet.create({
   secondaryText: { color: COLORS.textSecondary, fontSize: 15, fontWeight: '600' },
   loadingText: { color: COLORS.textSecondary, fontSize: 15, marginTop: 16 },
 
-  progress: { fontSize: 13, color: COLORS.textSecondary, fontWeight: '600', marginBottom: 10 },
+  qHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  progress: { fontSize: 13, color: COLORS.textSecondary, fontWeight: '600' },
+  timer: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: COLORS.secondary, borderRadius: 12, paddingHorizontal: 9, paddingVertical: 4,
+  },
+  timerLow: { backgroundColor: '#fdecea' },
+  timerText: { fontSize: 12.5, fontWeight: '700', color: COLORS.textSecondary },
+  timerTextLow: { color: COLORS.error },
+  timeUp: { fontSize: 12.5, fontWeight: '700', color: COLORS.error },
+  scoreMeta: { fontSize: 13, color: COLORS.textSecondary, marginTop: 8 },
   question: { fontSize: 19, fontWeight: '700', color: COLORS.text, lineHeight: 27, marginBottom: 18 },
   option: {
     flexDirection: 'row', alignItems: 'center', gap: 12,

@@ -15,6 +15,7 @@ interface ProgressState {
   totalQueries: number;
   recordQuery: (text: string) => void;
   recordFlashcard: (topic: string, rating: 'easy' | 'medium' | 'hard') => void;
+  recordQuiz: (topic: string, correct: number, total: number) => void;
   strongTopics: () => TopicStat[];
   weakTopics: () => TopicStat[];
   reset: () => void;
@@ -75,6 +76,24 @@ export const useProgressStore = create<ProgressState>()(
             ...cur,
             correct: cur.correct + (rating === 'easy' ? 1 : 0),
             struggled: cur.struggled + (rating === 'hard' ? 1 : 0),
+            lastStudied: new Date().toISOString(),
+          };
+          return { topics };
+        });
+      },
+
+      recordQuiz: (topic, correct, total) => {
+        // Map the quiz topic to a known progress topic (or use it raw), then feed
+        // results into the topic's mastery: right answers strengthen it, wrong
+        // answers mark struggles — so quizzes shape the Study strong/weak areas.
+        const key = extractTopics(topic)[0] ?? (topic.trim() || 'General');
+        set((s) => {
+          const topics = { ...s.topics };
+          const cur = topics[key] ?? { topic: key, queries: 0, correct: 0, struggled: 0, lastStudied: '' };
+          topics[key] = {
+            ...cur,
+            correct: cur.correct + correct,
+            struggled: cur.struggled + Math.max(0, total - correct),
             lastStudied: new Date().toISOString(),
           };
           return { topics };
