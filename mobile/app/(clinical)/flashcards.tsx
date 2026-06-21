@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
-import { View, FlatList, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { View, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Text, Card, Button, ProgressBar, Chip } from 'react-native-paper';
+import { useFocusEffect } from 'expo-router';
 import { useChatStore } from '@/stores/chat.store';
 import { useProgressStore, extractTopics } from '@/stores/progress.store';
+import { getSessions, getSessionMessages } from '@/services/history.service';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { COLORS } from '@/constants/theme';
 
@@ -15,39 +17,88 @@ interface Flashcard {
   rating?: 'easy' | 'medium' | 'hard';
 }
 
-function extractFlashcards(messages: ReturnType<typeof useChatStore.getState>['messages']): Flashcard[] {
-  const cards: Flashcard[] = [];
-  const pairs = [];
+// Works on both live chat messages and history-loaded messages (which have no id).
+type SrcMsg = { id?: string; role: string; content: string; citations?: { source_name?: string }[] };
 
+function extractFlashcards(messages: SrcMsg[], idPrefix = ''): Flashcard[] {
+  const cards: Flashcard[] = [];
   for (let i = 0; i < messages.length - 1; i++) {
     if (messages[i].role === 'user' && messages[i + 1].role === 'assistant') {
-      pairs.push({ q: messages[i], a: messages[i + 1] });
+      const q = messages[i];
+      const a = messages[i + 1];
+      const shortAnswer = a.content.length > 300 ? a.content.slice(0, 300) + '…' : a.content;
+      cards.push({
+        id: q.id ?? `${idPrefix}${i}`,
+        question: q.content,
+        answer: shortAnswer,
+        source: a.citations?.[0]?.source_name ?? 'Aboy AI',
+        flipped: false,
+      });
     }
   }
-
-  for (const pair of pairs) {
-    const answer = pair.a.content;
-    const shortAnswer = answer.length > 300 ? answer.slice(0, 300) + '…' : answer;
-    const source = pair.a.citations[0]?.source_name ?? 'Aboy AI';
-    cards.push({
-      id: pair.q.id,
-      question: pair.q.content,
-      answer: shortAnswer,
-      source,
-      flipped: false,
-    });
-  }
-
   return cards;
 }
 
 export default function FlashcardsScreen() {
-  const messages = useChatStore((s) => s.messages);
-  const [flashcards, setFlashcards] = useState<Flashcard[]>(() => extractFlashcards(messages));
+  const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
+  const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
   const [mode, setMode] = useState<'list' | 'review'>('list');
 
+  // Build cards from the user's ACTUAL history (past sessions in Supabase) plus
+  // the current live chat — not just the in-memory session, which is often empty.
+  useFocusEffect(
+    useCallback(() => {
+      let alive = true;
+      (async () => {
+        setLoading(true);
+        const cards = extractFlashcards(useChatStore.getState().messages as SrcMsg[], 'live-');
+        try {
+          const sessions = await getSessions();
+          const recent = sessions.slice(0, 12); // most recent conversations
+          const results = await Promise.all(
+            recent.map((s) =>
+              getSessionMessages(s.session_id)
+                .then((m) => ({ id: s.session_id, m }))
+                .catch(() => null),
+            ),
+          );
+          for (const r of results) {
+            if (r) cards.push(...extractFlashcards(r.m as SrcMsg[], `${r.id}-`));
+          }
+        } catch {
+          // history unavailable → fall back to whatever the live chat had
+        }
+        if (!alive) return;
+        // De-duplicate by question text (the same thing asked in several sessions).
+        const seen = new Set<string>();
+        const unique = cards.filter((c) => {
+          const k = c.question.trim().toLowerCase();
+          if (!k || seen.has(k)) return false;
+          seen.add(k);
+          return true;
+        });
+        setFlashcards(unique);
+        setActiveIndex(0);
+        setLoading(false);
+      })();
+      return () => {
+        alive = false;
+      };
+    }, []),
+  );
+
   const rated = flashcards.filter((c) => c.rating).length;
+
+  if (loading) {
+    return (
+      <AppScreen title="Flashcards">
+        <View style={styles.empty}>
+          <ActivityIndicator color={COLORS.primary} />
+        </View>
+      </AppScreen>
+    );
+  }
 
   function flipCard(id: string) {
     setFlashcards((prev) => prev.map((c) => (c.id === id ? { ...c, flipped: !c.flipped } : c)));
