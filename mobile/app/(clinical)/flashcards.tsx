@@ -150,24 +150,26 @@ export default function FlashcardsScreen() {
           style={styles.progressBar}
         />
 
-        <TouchableOpacity activeOpacity={0.9} onPress={() => flipCard(card.id)} style={styles.cardTouchable}>
-          <View style={[styles.reviewCard, card.flipped && styles.reviewCardFlipped]}>
-            <Text style={styles.cardLabel}>{card.flipped ? 'ANSWER' : 'QUESTION'}</Text>
-            <ScrollView
-              style={styles.cardScroll}
-              contentContainerStyle={styles.cardScrollContent}
-              showsVerticalScrollIndicator
-            >
-              <Text style={card.flipped ? styles.cardAnswer : styles.cardQuestion}>
-                {card.flipped ? card.answer : card.question}
-              </Text>
-              {card.flipped && !!card.source && (
-                <Text style={styles.sourceText}>Source: {card.source}</Text>
-              )}
-            </ScrollView>
-            {!card.flipped && <Text style={styles.tapHint}>Tap to reveal answer</Text>}
-          </View>
-        </TouchableOpacity>
+        {/* Card is NOT tap-to-flip — that fought with scrolling the long answer.
+            The ScrollView scrolls freely; flipping is the explicit button below. */}
+        <View style={[styles.reviewCard, card.flipped && styles.reviewCardFlipped]}>
+          <Text style={styles.cardLabel}>{card.flipped ? 'ANSWER' : 'QUESTION'}</Text>
+          <ScrollView
+            style={styles.cardScroll}
+            contentContainerStyle={styles.cardScrollContent}
+            showsVerticalScrollIndicator
+          >
+            <Text style={card.flipped ? styles.cardAnswer : styles.cardQuestion}>
+              {card.flipped ? card.answer : card.question}
+            </Text>
+            {card.flipped && !!card.source && (
+              <Text style={styles.sourceText}>Source: {card.source}</Text>
+            )}
+          </ScrollView>
+          <TouchableOpacity style={styles.flipBtn} onPress={() => flipCard(card.id)} activeOpacity={0.7}>
+            <Text style={styles.flipBtnText}>{card.flipped ? '↩  Show question' : 'Reveal answer  ↓'}</Text>
+          </TouchableOpacity>
+        </View>
 
         {card.flipped && (
           <View style={styles.ratingRow}>
@@ -302,7 +304,12 @@ const styles = StyleSheet.create({
   },
   reviewCardFlipped: { backgroundColor: COLORS.secondary, borderColor: '#bfe3d2' },
   cardScroll: { flex: 1 },
-  cardScrollContent: { flexGrow: 1, justifyContent: 'center', paddingVertical: 8 },
+  cardScrollContent: { flexGrow: 1, paddingVertical: 8 },
+  flipBtn: {
+    marginTop: 12, paddingVertical: 11, borderRadius: 12, alignItems: 'center',
+    backgroundColor: COLORS.secondary, borderWidth: 1, borderColor: COLORS.border,
+  },
+  flipBtnText: { fontSize: 14.5, fontWeight: '700', color: COLORS.primary },
   cardLabel: { fontSize: 11, fontWeight: '700', color: COLORS.textSecondary, letterSpacing: 1, marginBottom: 12 },
   cardQuestion: { fontSize: 20, fontWeight: '700', color: COLORS.text, lineHeight: 28 },
   cardAnswer: { fontSize: 15.5, color: COLORS.text, lineHeight: 23 },
