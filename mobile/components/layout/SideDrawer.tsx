@@ -16,6 +16,7 @@ import { useUIStore } from '@/stores/ui.store';
 import { useAuthStore } from '@/stores/auth.store';
 import { useChatStore } from '@/stores/chat.store';
 import { getDrawerItems } from '@/constants/navigation';
+import { AboyLogo } from '@/components/brand/AboyLogo';
 import { ROLE_LABELS, getRoleIcon, type UserRole } from '@/constants/roles';
 import { COLORS } from '@/constants/theme';
 
@@ -77,9 +78,7 @@ export function SideDrawer() {
       >
         {/* Brand */}
         <View style={styles.brandRow}>
-          <View style={styles.logo}>
-            <Text style={styles.logoLetter}>A</Text>
-          </View>
+          <AboyLogo size={32} />
           <Text style={styles.brandName}>Aboy AI</Text>
         </View>
 
