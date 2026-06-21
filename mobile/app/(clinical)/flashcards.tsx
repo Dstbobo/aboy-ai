@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { View, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
 import { Text, Card, Button, ProgressBar, Chip } from 'react-native-paper';
 import { useFocusEffect } from 'expo-router';
 import { useChatStore } from '@/stores/chat.store';
@@ -26,11 +26,12 @@ function extractFlashcards(messages: SrcMsg[], idPrefix = ''): Flashcard[] {
     if (messages[i].role === 'user' && messages[i + 1].role === 'assistant') {
       const q = messages[i];
       const a = messages[i + 1];
-      const shortAnswer = a.content.length > 300 ? a.content.slice(0, 300) + '…' : a.content;
+      // Skip blanks (e.g. an in-progress/empty streaming message).
+      if (!q.content?.trim() || !a.content?.trim()) continue;
       cards.push({
         id: q.id ?? `${idPrefix}${i}`,
-        question: q.content,
-        answer: shortAnswer,
+        question: q.content.trim(),
+        answer: a.content.trim(),
         source: a.citations?.[0]?.source_name ?? 'Aboy AI',
         flipped: false,
       });
@@ -72,12 +73,14 @@ export default function FlashcardsScreen() {
         if (!alive) return;
         // De-duplicate by question text (the same thing asked in several sessions).
         const seen = new Set<string>();
-        const unique = cards.filter((c) => {
-          const k = c.question.trim().toLowerCase();
-          if (!k || seen.has(k)) return false;
-          seen.add(k);
-          return true;
-        });
+        const unique = cards
+          .filter((c) => {
+            const k = c.question.trim().toLowerCase();
+            if (!k || seen.has(k)) return false;
+            seen.add(k);
+            return true;
+          })
+          .map((c, i) => ({ ...c, id: String(i) })); // guaranteed-unique ids
         setFlashcards(unique);
         setActiveIndex(0);
         setLoading(false);
@@ -147,24 +150,23 @@ export default function FlashcardsScreen() {
           style={styles.progressBar}
         />
 
-        <TouchableOpacity onPress={() => flipCard(card.id)} style={styles.cardTouchable}>
-          <Card style={[styles.quizCard, card.flipped && styles.quizCardFlipped]}>
-            <Card.Content style={styles.quizCardContent}>
-              {!card.flipped ? (
-                <>
-                  <Text style={styles.cardLabel}>QUESTION</Text>
-                  <Text style={styles.cardQuestion}>{card.question}</Text>
-                  <Text style={styles.tapHint}>Tap to reveal answer</Text>
-                </>
-              ) : (
-                <>
-                  <Text style={styles.cardLabel}>ANSWER</Text>
-                  <Text style={styles.cardAnswer}>{card.answer}</Text>
-                  <Text style={styles.sourceText}>Source: {card.source}</Text>
-                </>
+        <TouchableOpacity activeOpacity={0.9} onPress={() => flipCard(card.id)} style={styles.cardTouchable}>
+          <View style={[styles.reviewCard, card.flipped && styles.reviewCardFlipped]}>
+            <Text style={styles.cardLabel}>{card.flipped ? 'ANSWER' : 'QUESTION'}</Text>
+            <ScrollView
+              style={styles.cardScroll}
+              contentContainerStyle={styles.cardScrollContent}
+              showsVerticalScrollIndicator
+            >
+              <Text style={card.flipped ? styles.cardAnswer : styles.cardQuestion}>
+                {card.flipped ? card.answer : card.question}
+              </Text>
+              {card.flipped && !!card.source && (
+                <Text style={styles.sourceText}>Source: {card.source}</Text>
               )}
-            </Card.Content>
-          </Card>
+            </ScrollView>
+            {!card.flipped && <Text style={styles.tapHint}>Tap to reveal answer</Text>}
+          </View>
         </TouchableOpacity>
 
         {card.flipped && (
@@ -205,7 +207,11 @@ export default function FlashcardsScreen() {
     <View style={styles.flex}>
       <View style={styles.listHeader}>
         <Text style={styles.listTitle}>{flashcards.length} flashcards</Text>
-        <Button mode="contained" onPress={() => { setActiveIndex(0); setMode('review'); }}>
+        <Button mode="contained" onPress={() => {
+          setFlashcards((prev) => prev.map((c) => ({ ...c, flipped: false })));
+          setActiveIndex(0);
+          setMode('review');
+        }}>
           Review cards
         </Button>
       </View>
@@ -289,11 +295,19 @@ const styles = StyleSheet.create({
   },
   quizCardFlipped: { backgroundColor: COLORS.secondary },
   quizCardContent: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
-  cardLabel: { fontSize: 11, fontWeight: '700', color: COLORS.textSecondary, letterSpacing: 1, marginBottom: 16 },
-  cardQuestion: { fontSize: 20, fontWeight: '600', color: COLORS.text, textAlign: 'center', lineHeight: 28 },
-  cardAnswer: { fontSize: 16, color: COLORS.text, textAlign: 'center', lineHeight: 24 },
-  tapHint: { fontSize: 12, color: COLORS.textSecondary, marginTop: 24 },
-  sourceText: { fontSize: 11, color: COLORS.primary, marginTop: 16, fontStyle: 'italic' },
+  // Plain scrollable review card (replaces paper Card so long answers show + scroll).
+  reviewCard: {
+    flex: 1, backgroundColor: COLORS.surface, borderRadius: 16, padding: 20, marginBottom: 16,
+    borderWidth: 1, borderColor: COLORS.border,
+  },
+  reviewCardFlipped: { backgroundColor: COLORS.secondary, borderColor: '#bfe3d2' },
+  cardScroll: { flex: 1 },
+  cardScrollContent: { flexGrow: 1, justifyContent: 'center', paddingVertical: 8 },
+  cardLabel: { fontSize: 11, fontWeight: '700', color: COLORS.textSecondary, letterSpacing: 1, marginBottom: 12 },
+  cardQuestion: { fontSize: 20, fontWeight: '700', color: COLORS.text, lineHeight: 28 },
+  cardAnswer: { fontSize: 15.5, color: COLORS.text, lineHeight: 23 },
+  tapHint: { fontSize: 12, color: COLORS.textSecondary, marginTop: 14, textAlign: 'center' },
+  sourceText: { fontSize: 11.5, color: COLORS.primary, marginTop: 14, fontStyle: 'italic' },
   ratingRow: { flexDirection: 'row', gap: 8, paddingBottom: 16 },
   rateBtn: { flex: 1 },
 
