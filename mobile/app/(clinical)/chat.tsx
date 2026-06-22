@@ -87,9 +87,9 @@ export default function ChatScreen() {
     );
     setTimeout(() => { pendingScroll.current = false; }, 450);
   }
-  // Small gap below the last message so it rests just ABOVE the input bar (not
+  // Gap below the last message so it rests a little ABOVE the input bar (not
   // flung to the top, not hidden behind the bar). Standard chat behaviour.
-  const bottomSpacer = 16;
+  const bottomSpacer = 44;
   // Whether the user is at/near the bottom — used to follow the streaming answer
   // (auto-scroll) without fighting them when they've scrolled up to read.
   const atBottom = useRef(true);
