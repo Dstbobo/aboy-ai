@@ -82,13 +82,25 @@ export default function ChatScreen() {
   const [footerH, setFooterH] = useState(44);
   const sendWindow = useRef(false);
 
+  // Smoothly scroll the latest USER message to the top. We target the message
+  // itself (scrollToIndex = a FIXED point), NOT the content end — pinning to the
+  // moving end while the answer streams + footer shrinks caused the up/down
+  // jitter. The message's position doesn't move, so the view stays rock-steady.
+  function scrollQuestionToTop() {
+    const msgs = useChatStore.getState().messages;
+    let idx = -1;
+    for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i].role === 'user') { idx = i; break; } }
+    if (idx < 0) return;
+    try {
+      listRef.current?.scrollToIndex({
+        index: idx, viewPosition: 0, viewOffset: insets.top + HEADER_HEIGHT + 10, animated: true,
+      });
+    } catch {}
+  }
   function pinNewMessageToTop() {
-    // The footer makes content-end == "question at top", so scrollToEnd pins it.
-    // SMOOTH (animated) so it glides into place rather than snapping — the
-    // onContentSizeChange below also scrolls smoothly as the footer settles.
     sendWindow.current = true;
-    setTimeout(() => { if (sendWindow.current) listRef.current?.scrollToEnd({ animated: true }); }, 200);
-    setTimeout(() => { sendWindow.current = false; }, 900);
+    setTimeout(() => { if (sendWindow.current) scrollQuestionToTop(); }, 200);
+    setTimeout(() => { sendWindow.current = false; }, 1500);
   }
   const [inputText, setInputText] = useState('');
   // Live research status (Understanding → Searching → Analyzing → Generating).
@@ -181,7 +193,7 @@ export default function ChatScreen() {
     const avail = screenHeight - (insets.top + HEADER_HEIGHT + 10) - barHeight - (kbOpen ? kbHeight : 0) - 8;
     const turnH = Math.max(0, lastBottom.current - lastUserTop.current);
     const h = Math.max(8, Math.round(avail - turnH));
-    setFooterH((prev) => (Math.abs(prev - h) > 4 ? h : prev));
+    setFooterH((prev) => (Math.abs(prev - h) > 24 ? h : prev));
   }
   useEffect(() => { recomputeFooter(); /* eslint-disable-next-line */ }, [kbOpen, kbHeight, barHeight]);
 
@@ -523,7 +535,11 @@ export default function ChatScreen() {
                 keyboardShouldPersistTaps="handled"
                 // During the brief send window, keep the question pinned to the top
                 // (scrollToEnd lands it there because the footer fills the rest).
-                onContentSizeChange={() => { if (sendWindow.current) listRef.current?.scrollToEnd({ animated: true }); }}
+                onContentSizeChange={() => { if (sendWindow.current) scrollQuestionToTop(); }}
+                onScrollToIndexFailed={() => {
+                  listRef.current?.scrollToEnd({ animated: false });
+                  setTimeout(scrollQuestionToTop, 100);
+                }}
                 // Thinking dots show only until the first token streams in.
                 ListFooterComponent={
                   <>
