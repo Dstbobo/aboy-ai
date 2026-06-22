@@ -72,18 +72,21 @@ export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const { height: screenHeight } = useWindowDimensions();
   const listRef = useRef<FlatList>(null);
-  // ChatGPT-style: on send, PIN the new user message to the TOP of the chat area
-  // and let the answer stream in below it (we do NOT chase the bottom). The tall
-  // bottom spacer gives the message room to reach the top; scrollToIndex with
-  // viewPosition 0 places it just under the header.
-  const pinIndex = useRef<number | null>(null);
-  const bottomSpacer = Math.round(screenHeight * 0.85);
+  // ChatGPT-style: on send, PIN the new user message to the TOP and let the answer
+  // stream in below it. The big bottom spacer that makes this possible exists ONLY
+  // while generating (see paddingBottom) — once done it shrinks to a small gap so a
+  // finished conversation scrolls normally (no empty space to slide into).
+  const pinActive = useRef(false);
 
   function tryPin() {
-    if (pinIndex.current == null) return;
+    if (!pinActive.current) return;
+    const msgs = useChatStore.getState().messages;
+    let idx = -1;
+    for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i].role === 'user') { idx = i; break; } }
+    if (idx < 0) return;
     try {
       listRef.current?.scrollToIndex({
-        index: pinIndex.current,
+        index: idx,
         viewPosition: 0,
         viewOffset: insets.top + HEADER_HEIGHT + 10,
         animated: true,
@@ -91,9 +94,9 @@ export default function ChatScreen() {
     } catch {}
   }
   function pinNewMessageToTop() {
-    pinIndex.current = useChatStore.getState().messages.length - 1;
-    [60, 220, 420].forEach((d) => setTimeout(tryPin, d));
-    setTimeout(() => { pinIndex.current = null; }, 650);
+    pinActive.current = true;
+    [60, 240, 480].forEach((d) => setTimeout(tryPin, d));
+    setTimeout(() => { pinActive.current = false; }, 900);
   }
   const [inputText, setInputText] = useState('');
   // Live research status (Understanding → Searching → Analyzing → Generating).
@@ -504,9 +507,9 @@ export default function ChatScreen() {
                 keyboardShouldPersistTaps="handled"
                 // While the post-send window is open, keep the new message pinned
                 // to the top as the list re-measures (answer streams in below it).
-                onContentSizeChange={() => { if (pinIndex.current != null) tryPin(); }}
+                onContentSizeChange={() => { if (pinActive.current) tryPin(); }}
                 // If the target row isn't measured yet, render the tail then retry.
-                onScrollToIndexFailed={(info) => {
+                onScrollToIndexFailed={() => {
                   listRef.current?.scrollToEnd({ animated: false });
                   setTimeout(tryPin, 120);
                 }}
@@ -518,7 +521,13 @@ export default function ChatScreen() {
                 // answer to flow in below it (ChatGPT/Gemini-style).
                 contentContainerStyle={[
                   styles.listContent,
-                  { paddingTop: insets.top + HEADER_HEIGHT + 10, paddingBottom: barHeight + bottomSpacer },
+                  {
+                    paddingTop: insets.top + HEADER_HEIGHT + 10,
+                    // Big spacer ONLY while generating (so the question can pin to
+                    // the top); a small gap otherwise so finished chats scroll
+                    // normally with no empty space below the last message.
+                    paddingBottom: barHeight + (isLoading ? Math.round(screenHeight * 0.82) : 44),
+                  },
                 ]}
                 renderItem={({ item }) => <MessageBubble message={item} onRefresh={regenerate} />}
               />
