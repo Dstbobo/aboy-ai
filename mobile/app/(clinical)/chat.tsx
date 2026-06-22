@@ -76,15 +76,16 @@ export default function ChatScreen() {
   // True for a short window after a send so onContentSizeChange keeps scrolling
   // to the bottom as the list grows (even if the user had scrolled up).
   const pendingScroll = useRef(false);
-  // Bulletproof jump-to-bottom: a single scrollToEnd is unreliable on a
-  // virtualized list scrolled far up (off-screen heights are estimated), so we
-  // fire it several times over ~0.7s and keep onContentSizeChange scrolling.
+  // Sharp jump-to-bottom: INSTANT (animated:false) snaps, not an animation —
+  // animated repeats stutter ("hooking"). Instant scrolls land exactly at the
+  // bottom and are idempotent, so firing a few (plus onContentSizeChange while
+  // the window is open) is reliable on a virtualized list without any jank.
   function jumpToBottom() {
     pendingScroll.current = true;
-    [40, 180, 380, 600].forEach((d) =>
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: d > 40 }), d),
+    [0, 120, 300].forEach((d) =>
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), d),
     );
-    setTimeout(() => { pendingScroll.current = false; }, 750);
+    setTimeout(() => { pendingScroll.current = false; }, 450);
   }
   // Tall bottom spacer so the latest user message can scroll up to the top,
   // leaving the screen below it for the AI answer to flow into.
