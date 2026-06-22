@@ -159,13 +159,18 @@ export default function ChatScreen() {
     NavigationBar.setButtonStyleAsync('dark').catch(() => {});
   }, []);
 
-  // Keyboard state: the bar hugs the keyboard when open, floats above the home
-  // indicator (safe area) when closed. We only TRACK open/closed here — we do NOT
-  // scroll the list on keyboard show/hide, because that fought with the
-  // jump-to-bottom on send (and undid it). The send-scroll owns the scroll.
+  // Keyboard state + height. The height is added to the list's bottom padding
+  // when the keyboard is open so the newest message lands ABOVE the keyboard/
+  // input bar instead of behind it. On open we also re-pin to the bottom if the
+  // user was already there.
   const [kbOpen, setKbOpen] = useState(false);
+  const [kbHeight, setKbHeight] = useState(0);
   useEffect(() => {
-    const s = Keyboard.addListener('keyboardDidShow', () => setKbOpen(true));
+    const s = Keyboard.addListener('keyboardDidShow', (e) => {
+      setKbOpen(true);
+      setKbHeight(e.endCoordinates?.height ?? 0);
+      if (atBottom.current) jumpToBottom();
+    });
     const hide = Keyboard.addListener('keyboardDidHide', () => setKbOpen(false));
     return () => {
       s.remove();
@@ -524,7 +529,7 @@ export default function ChatScreen() {
                 // leaving room for the AI answer to flow in below it (Gemini-style).
                 contentContainerStyle={[
                   styles.listContent,
-                  { paddingTop: insets.top + HEADER_HEIGHT + 10, paddingBottom: barHeight + bottomSpacer },
+                  { paddingTop: insets.top + HEADER_HEIGHT + 10, paddingBottom: barHeight + bottomSpacer + (kbOpen ? kbHeight : 0) },
                 ]}
                 renderItem={({ item }) => <MessageBubble message={item} onRefresh={regenerate} />}
               />
