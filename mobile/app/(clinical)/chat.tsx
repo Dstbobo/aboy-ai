@@ -84,8 +84,10 @@ export default function ChatScreen() {
 
   function pinNewMessageToTop() {
     // The footer makes content-end == "question at top", so scrollToEnd pins it.
+    // SMOOTH (animated) so it glides into place rather than snapping — the
+    // onContentSizeChange below also scrolls smoothly as the footer settles.
     sendWindow.current = true;
-    [60, 240, 480].forEach((d) => setTimeout(() => listRef.current?.scrollToEnd({ animated: d > 60 }), d));
+    setTimeout(() => { if (sendWindow.current) listRef.current?.scrollToEnd({ animated: true }); }, 200);
     setTimeout(() => { sendWindow.current = false; }, 900);
   }
   const [inputText, setInputText] = useState('');
@@ -517,7 +519,7 @@ export default function ChatScreen() {
                 keyboardShouldPersistTaps="handled"
                 // During the brief send window, keep the question pinned to the top
                 // (scrollToEnd lands it there because the footer fills the rest).
-                onContentSizeChange={() => { if (sendWindow.current) listRef.current?.scrollToEnd({ animated: false }); }}
+                onContentSizeChange={() => { if (sendWindow.current) listRef.current?.scrollToEnd({ animated: true }); }}
                 // Thinking dots show only until the first token streams in.
                 ListFooterComponent={
                   <>
