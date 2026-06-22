@@ -73,10 +73,19 @@ export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const { height: screenHeight } = useWindowDimensions();
   const listRef = useRef<FlatList>(null);
-  // Set true when a message is sent so the NEXT content-size change (after the
-  // list re-measures with the new message) jumps to the bottom — even if the
-  // user had scrolled up. Cleared once the scroll has fired.
+  // True for a short window after a send so onContentSizeChange keeps scrolling
+  // to the bottom as the list grows (even if the user had scrolled up).
   const pendingScroll = useRef(false);
+  // Bulletproof jump-to-bottom: a single scrollToEnd is unreliable on a
+  // virtualized list scrolled far up (off-screen heights are estimated), so we
+  // fire it several times over ~0.7s and keep onContentSizeChange scrolling.
+  function jumpToBottom() {
+    pendingScroll.current = true;
+    [40, 180, 380, 600].forEach((d) =>
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: d > 40 }), d),
+    );
+    setTimeout(() => { pendingScroll.current = false; }, 750);
+  }
   // Tall bottom spacer so the latest user message can scroll up to the top,
   // leaving the screen below it for the AI answer to flow into.
   const bottomSpacer = Math.round(screenHeight * 0.7);
@@ -175,13 +184,7 @@ export default function ChatScreen() {
       abortActiveRequest();
       addUserMessage(text || `📄 ${file.name}`);
       setLoading(true);
-      pendingScroll.current = true;
-      setTimeout(() => {
-        if (pendingScroll.current) {
-          pendingScroll.current = false;
-          listRef.current?.scrollToEnd({ animated: true });
-        }
-      }, 250);
+      jumpToBottom();
       try {
         const ans = await analyzeDocument(file.uri, file.name, file.mime, text || undefined);
         addAssistantMessage('doc' + Date.now(), ans || 'I could not read that document.', [], false);
@@ -202,13 +205,7 @@ export default function ChatScreen() {
       setInputText('');
       setPendingImage(null);
       abortActiveRequest();
-      pendingScroll.current = true;
-      setTimeout(() => {
-        if (pendingScroll.current) {
-          pendingScroll.current = false;
-          listRef.current?.scrollToEnd({ animated: true });
-        }
-      }, 250);
+      jumpToBottom();
       await analyzeImageToChat(image, { prompt: text || undefined, label: text || '🖼️ Explain this image' });
       return;
     }
@@ -230,16 +227,8 @@ export default function ChatScreen() {
     setLoading(true);
     setResearch('Thinking'); // calm initial state until the first status arrives
     // Jump to the bottom so the just-sent message + incoming answer are visible,
-    // even if the user had scrolled up. onContentSizeChange fires the scroll once
-    // the list has actually re-measured with the new message (reliable); the
-    // timeout is a fallback in case that doesn't fire.
-    pendingScroll.current = true;
-    setTimeout(() => {
-      if (pendingScroll.current) {
-        pendingScroll.current = false;
-        listRef.current?.scrollToEnd({ animated: true });
-      }
-    }, 250);
+    // even if the user had scrolled up.
+    jumpToBottom();
 
     // One continuous thread: include recent turns (typed AND voice).
     // Trim each turn so a long prior answer can't blow the request size /
@@ -507,13 +496,11 @@ export default function ChatScreen() {
                 data={data}
                 style={styles.flex}
                 keyboardShouldPersistTaps="handled"
-                // After a send, the list re-measures with the new message; jump
-                // to the bottom exactly once so the message + answer are visible.
+                // While the post-send window is open, keep pinning to the bottom
+                // as the list grows/re-measures (don't clear the flag here — the
+                // timeout in jumpToBottom does, so several growths all scroll).
                 onContentSizeChange={() => {
-                  if (pendingScroll.current) {
-                    pendingScroll.current = false;
-                    listRef.current?.scrollToEnd({ animated: true });
-                  }
+                  if (pendingScroll.current) listRef.current?.scrollToEnd({ animated: false });
                 }}
                 // Thinking dots show only until the first token streams in.
                 ListFooterComponent={isLoading && !messages.some((m) => m.isStreaming) ? <ThinkingDots label={research} /> : null}
