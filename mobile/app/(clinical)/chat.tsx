@@ -9,12 +9,11 @@ import {
   ActivityIndicator,
   Animated,
   Image,
-  Keyboard,
   useWindowDimensions,
 } from 'react-native';
 import { Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { KeyboardStickyView } from 'react-native-keyboard-controller';
+import { KeyboardStickyView, KeyboardEvents } from 'react-native-keyboard-controller';
 import * as NavigationBar from 'expo-navigation-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -166,12 +165,14 @@ export default function ChatScreen() {
   const [kbOpen, setKbOpen] = useState(false);
   const [kbHeight, setKbHeight] = useState(0);
   useEffect(() => {
-    const s = Keyboard.addListener('keyboardDidShow', (e) => {
+    // Use the keyboard-controller's own events — the RN Keyboard height is
+    // unreliable under react-native-keyboard-controller (often 0).
+    const s = KeyboardEvents.addListener('keyboardDidShow', (e) => {
       setKbOpen(true);
-      setKbHeight(e.endCoordinates?.height ?? 0);
+      setKbHeight(e.height ?? 0);
       if (atBottom.current) jumpToBottom();
     });
-    const hide = Keyboard.addListener('keyboardDidHide', () => setKbOpen(false));
+    const hide = KeyboardEvents.addListener('keyboardDidHide', () => setKbOpen(false));
     return () => {
       s.remove();
       hide.remove();
