@@ -53,9 +53,9 @@ export function WelcomeHome(_props: { onPick: (prompt: string) => void }) {
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
-  // Greeting sits around the middle, lifted slightly (paddingBottom) so the
-  // keyboard never reaches it but it isn't pinned to the top either.
-  top: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 290, paddingHorizontal: 32 },
+  // Balanced upper-middle: centered, then lifted a little so it sits a touch
+  // above centre — clear of the keyboard, well above the input bar.
+  top: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 160, paddingHorizontal: 32 },
   greeting: { fontSize: 26, fontWeight: '800', color: COLORS.text, textAlign: 'center' },
   message: { fontSize: 15, color: COLORS.textSecondary, textAlign: 'center', marginTop: 10, lineHeight: 22 },
 });

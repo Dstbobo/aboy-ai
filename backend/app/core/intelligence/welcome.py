@@ -27,21 +27,25 @@ def time_greeting(name: str, hour: int) -> str:
     return f"Still up, {name}?"
 
 
-def away_message(name: str, profile: dict | None) -> str:
+def away_message(profile: dict | None) -> str:
+    """Sub-headline under the greeting. The NAME is intentionally omitted here —
+    it already appears in the greeting, so repeating it reads as automated.
+    Dynamic: a longer, conversational resume prompt when they've been away a
+    while; a short, simple line when they were active recently."""
     last = _parse(profile.get("last_active_at")) if profile else None
     last_topic = (profile or {}).get("last_topic")
     if last is None:
-        return f"Welcome to Aboy, {name}. Let's get started."
+        return "Welcome to Aboy — let's get started."
     hours = (datetime.now(timezone.utc) - last).total_seconds() / 3600
-    if hours > 168 and last_topic:
-        return f"Welcome back, {name}. A lot to catch up on — let's start with {last_topic}"
+    # ── Been a while → longer, conversational nudge to resume ──
     if hours > 72:
-        return f"We missed you, {name}. Let's get back on track"
+        return (f"It's been a while — want to pick up where you left off with {last_topic}?"
+                if last_topic else "It's been a while. Let's get back on track.")
     if hours > 24:
-        return f"It's been a day or two, {name}. Let's pick up where you left off"
-    if hours >= 1:
-        return f"Good to see you again, {name}. Ready to continue?"
-    return f"Welcome back, {name}"
+        return (f"Let's continue with {last_topic}, right where you left off."
+                if last_topic else "Let's pick up where you left off.")
+    # ── Active recently → short and simple ──
+    return "Ready to continue?"
 
 
 def progress_message(profile: dict | None) -> str | None:
@@ -173,7 +177,7 @@ def build_welcome(profile: dict | None, name: str, role: str, hour: int) -> dict
     streak = (profile or {}).get("current_streak") or 0
     return {
         "greeting": time_greeting(name or "there", hour),
-        "message": away_message(name or "there", profile),
+        "message": away_message(profile),
         "progress": progress_message(profile),
         "streak": streak,
         "longest_streak": (profile or {}).get("longest_streak") or 0,
