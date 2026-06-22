@@ -72,31 +72,21 @@ export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const { height: screenHeight } = useWindowDimensions();
   const listRef = useRef<FlatList>(null);
-  // ChatGPT-style: on send, PIN the new user message to the TOP and let the answer
-  // stream in below it. The big bottom spacer that makes this possible exists ONLY
-  // while generating (see paddingBottom) — once done it shrinks to a small gap so a
-  // finished conversation scrolls normally (no empty space to slide into).
-  const pinActive = useRef(false);
+  // ChatGPT-style: the new question pins to the TOP and the answer streams below.
+  // A footer spacer (= the empty room needed so the question can reach the top)
+  // shrinks GRADUALLY as the answer grows — so there's never a jump when it
+  // finishes and never a big void to scroll into. Measured from the last user
+  // message's top and the last message's bottom (onLayout in renderItem).
+  const lastUserTop = useRef(0);
+  const lastBottom = useRef(0);
+  const [footerH, setFooterH] = useState(44);
+  const sendWindow = useRef(false);
 
-  function tryPin() {
-    if (!pinActive.current) return;
-    const msgs = useChatStore.getState().messages;
-    let idx = -1;
-    for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i].role === 'user') { idx = i; break; } }
-    if (idx < 0) return;
-    try {
-      listRef.current?.scrollToIndex({
-        index: idx,
-        viewPosition: 0,
-        viewOffset: insets.top + HEADER_HEIGHT + 10,
-        animated: true,
-      });
-    } catch {}
-  }
   function pinNewMessageToTop() {
-    pinActive.current = true;
-    [60, 240, 480].forEach((d) => setTimeout(tryPin, d));
-    setTimeout(() => { pinActive.current = false; }, 900);
+    // The footer makes content-end == "question at top", so scrollToEnd pins it.
+    sendWindow.current = true;
+    [60, 240, 480].forEach((d) => setTimeout(() => listRef.current?.scrollToEnd({ animated: d > 60 }), d));
+    setTimeout(() => { sendWindow.current = false; }, 900);
   }
   const [inputText, setInputText] = useState('');
   // Live research status (Understanding → Searching → Analyzing → Generating).
@@ -169,14 +159,29 @@ export default function ChatScreen() {
   // input bar instead of behind it. On open we also re-pin to the bottom if the
   // user was already there.
   const [kbOpen, setKbOpen] = useState(false);
+  const [kbHeight, setKbHeight] = useState(0);
   useEffect(() => {
-    const s = KeyboardEvents.addListener('keyboardDidShow', () => setKbOpen(true));
+    const s = KeyboardEvents.addListener('keyboardDidShow', (e) => {
+      setKbOpen(true);
+      setKbHeight(e.height ?? 0);
+    });
     const hide = KeyboardEvents.addListener('keyboardDidHide', () => setKbOpen(false));
     return () => {
       s.remove();
       hide.remove();
     };
   }, []);
+
+  // Footer height that keeps the latest turn filling the screen (question at the
+  // top). Recomputed as the answer grows (onLayout) and when the keyboard/bar
+  // change. Bounded so a long answer leaves no empty space, only a small gap.
+  function recomputeFooter() {
+    const avail = screenHeight - (insets.top + HEADER_HEIGHT + 10) - barHeight - (kbOpen ? kbHeight : 0) - 8;
+    const turnH = Math.max(0, lastBottom.current - lastUserTop.current);
+    const h = Math.max(8, Math.round(avail - turnH));
+    setFooterH((prev) => (Math.abs(prev - h) > 4 ? h : prev));
+  }
+  useEffect(() => { recomputeFooter(); /* eslint-disable-next-line */ }, [kbOpen, kbHeight, barHeight]);
 
   async function sendMessage(textOverride?: string) {
     const text = (textOverride ?? inputText).trim();
@@ -457,6 +462,11 @@ export default function ChatScreen() {
   const hasChat = messages.length > 0;
   const isTyping = inputText.trim().length > 0 || !!pendingImage || !!pendingFile;
   const data = messages; // normal order: oldest -> newest (top -> bottom)
+  // Indices we measure (onLayout) to size the footer that keeps the last turn
+  // filling the screen: the last user message (its top) and the last item (bottom).
+  const lastIndex = data.length - 1;
+  let lastUserIndex = -1;
+  for (let i = lastIndex; i >= 0; i--) { if (data[i].role === 'user') { lastUserIndex = i; break; } }
   const firstName = (user?.fullName || '').split(' ')[0];
 
   // Right-side control: stop (AI responding) > send (typing) > waveform pill (default).
@@ -505,31 +515,42 @@ export default function ChatScreen() {
                 data={data}
                 style={styles.flex}
                 keyboardShouldPersistTaps="handled"
-                // While the post-send window is open, keep the new message pinned
-                // to the top as the list re-measures (answer streams in below it).
-                onContentSizeChange={() => { if (pinActive.current) tryPin(); }}
-                // If the target row isn't measured yet, render the tail then retry.
-                onScrollToIndexFailed={() => {
-                  listRef.current?.scrollToEnd({ animated: false });
-                  setTimeout(tryPin, 120);
-                }}
+                // During the brief send window, keep the question pinned to the top
+                // (scrollToEnd lands it there because the footer fills the rest).
+                onContentSizeChange={() => { if (sendWindow.current) listRef.current?.scrollToEnd({ animated: false }); }}
                 // Thinking dots show only until the first token streams in.
-                ListFooterComponent={isLoading && !messages.some((m) => m.isStreaming) ? <ThinkingDots label={research} /> : null}
+                ListFooterComponent={
+                  <>
+                    {isLoading && !messages.some((m) => m.isStreaming) ? <ThinkingDots label={research} /> : null}
+                    <View style={{ height: footerH }} />
+                  </>
+                }
                 keyExtractor={(m) => m.id}
-                // Top: clear the floating header. Bottom: a tall spacer so the new
-                // USER message can scroll up to the top, leaving room for the AI
-                // answer to flow in below it (ChatGPT/Gemini-style).
                 contentContainerStyle={[
                   styles.listContent,
                   {
                     paddingTop: insets.top + HEADER_HEIGHT + 10,
-                    // Big spacer ONLY while generating (so the question can pin to
-                    // the top); a small gap otherwise so finished chats scroll
-                    // normally with no empty space below the last message.
-                    paddingBottom: barHeight + (isLoading ? Math.round(screenHeight * 0.82) : 44),
+                    // Just clear the input bar + keyboard; the footer spacer (above)
+                    // does the work of pushing the question to the top.
+                    paddingBottom: barHeight + (kbOpen ? kbHeight : 0) + 8,
                   },
                 ]}
-                renderItem={({ item }) => <MessageBubble message={item} onRefresh={regenerate} />}
+                renderItem={({ item, index }) => (
+                  <View
+                    onLayout={
+                      index === lastUserIndex || index === lastIndex
+                        ? (e) => {
+                            const { y, height } = e.nativeEvent.layout;
+                            if (index === lastUserIndex) lastUserTop.current = y;
+                            if (index === lastIndex) lastBottom.current = y + height;
+                            recomputeFooter();
+                          }
+                        : undefined
+                    }
+                  >
+                    <MessageBubble message={item} onRefresh={regenerate} />
+                  </View>
+                )}
               />
             )}
 
