@@ -278,7 +278,11 @@ export default function ChatScreen() {
           if (cancelled) return;
           if (!started) {
             started = true;
-            setResearch(null); // answer is arriving — drop the research panel
+            // Answer is arriving — stop auto-scrolling so the question stays
+            // PARKED at the top; the answer streams into the footer below it
+            // (the view no longer drifts down to the input bar).
+            sendWindow.current = false;
+            setResearch(null); // drop the research panel
             startStreaming(aiId); // first token → swap the thinking dots for the bubble
           }
           appendStream(chunk);
