@@ -72,26 +72,29 @@ export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const { height: screenHeight } = useWindowDimensions();
   const listRef = useRef<FlatList>(null);
-  // True for a short window after a send so onContentSizeChange keeps scrolling
-  // to the bottom as the list grows (even if the user had scrolled up).
-  const pendingScroll = useRef(false);
-  // Sharp jump-to-bottom: INSTANT (animated:false) snaps, not an animation —
-  // animated repeats stutter ("hooking"). Instant scrolls land exactly at the
-  // bottom and are idempotent, so firing a few (plus onContentSizeChange while
-  // the window is open) is reliable on a virtualized list without any jank.
-  function jumpToBottom() {
-    pendingScroll.current = true;
-    [0, 120, 300].forEach((d) =>
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), d),
-    );
-    setTimeout(() => { pendingScroll.current = false; }, 450);
+  // ChatGPT-style: on send, PIN the new user message to the TOP of the chat area
+  // and let the answer stream in below it (we do NOT chase the bottom). The tall
+  // bottom spacer gives the message room to reach the top; scrollToIndex with
+  // viewPosition 0 places it just under the header.
+  const pinIndex = useRef<number | null>(null);
+  const bottomSpacer = Math.round(screenHeight * 0.85);
+
+  function tryPin() {
+    if (pinIndex.current == null) return;
+    try {
+      listRef.current?.scrollToIndex({
+        index: pinIndex.current,
+        viewPosition: 0,
+        viewOffset: insets.top + HEADER_HEIGHT + 10,
+        animated: true,
+      });
+    } catch {}
   }
-  // Gap below the last message so it rests a little ABOVE the input bar (not
-  // flung to the top, not hidden behind the bar). Standard chat behaviour.
-  const bottomSpacer = 44;
-  // Whether the user is at/near the bottom — used to follow the streaming answer
-  // (auto-scroll) without fighting them when they've scrolled up to read.
-  const atBottom = useRef(true);
+  function pinNewMessageToTop() {
+    pinIndex.current = useChatStore.getState().messages.length - 1;
+    [60, 220, 420].forEach((d) => setTimeout(tryPin, d));
+    setTimeout(() => { pinIndex.current = null; }, 650);
+  }
   const [inputText, setInputText] = useState('');
   // Live research status (Understanding → Searching → Analyzing → Generating).
   // Shown beside the thinking dots until the first answer token streams in.
@@ -163,15 +166,8 @@ export default function ChatScreen() {
   // input bar instead of behind it. On open we also re-pin to the bottom if the
   // user was already there.
   const [kbOpen, setKbOpen] = useState(false);
-  const [kbHeight, setKbHeight] = useState(0);
   useEffect(() => {
-    // Use the keyboard-controller's own events — the RN Keyboard height is
-    // unreliable under react-native-keyboard-controller (often 0).
-    const s = KeyboardEvents.addListener('keyboardDidShow', (e) => {
-      setKbOpen(true);
-      setKbHeight(e.height ?? 0);
-      if (atBottom.current) jumpToBottom();
-    });
+    const s = KeyboardEvents.addListener('keyboardDidShow', () => setKbOpen(true));
     const hide = KeyboardEvents.addListener('keyboardDidHide', () => setKbOpen(false));
     return () => {
       s.remove();
@@ -194,7 +190,7 @@ export default function ChatScreen() {
       abortActiveRequest();
       addUserMessage(text || `📄 ${file.name}`);
       setLoading(true);
-      jumpToBottom();
+      pinNewMessageToTop();
       try {
         const ans = await analyzeDocument(file.uri, file.name, file.mime, text || undefined);
         addAssistantMessage('doc' + Date.now(), ans || 'I could not read that document.', [], false);
@@ -215,7 +211,7 @@ export default function ChatScreen() {
       setInputText('');
       setPendingImage(null);
       abortActiveRequest();
-      jumpToBottom();
+      pinNewMessageToTop();
       await analyzeImageToChat(image, { prompt: text || undefined, label: text || '🖼️ Explain this image' });
       return;
     }
@@ -238,7 +234,7 @@ export default function ChatScreen() {
     setResearch('Thinking'); // calm initial state until the first status arrives
     // Jump to the bottom so the just-sent message + incoming answer are visible,
     // even if the user had scrolled up.
-    jumpToBottom();
+    pinNewMessageToTop();
 
     // One continuous thread: include recent turns (typed AND voice).
     // Trim each turn so a long prior answer can't blow the request size /
@@ -506,31 +502,23 @@ export default function ChatScreen() {
                 data={data}
                 style={styles.flex}
                 keyboardShouldPersistTaps="handled"
-                // Pin to the bottom as the list grows — on send (pendingScroll)
-                // or while the user is already at the bottom (so the streaming
-                // answer follows). Instant = sharp, no animation stutter.
-                onContentSizeChange={() => {
-                  if (pendingScroll.current || atBottom.current) {
-                    listRef.current?.scrollToEnd({ animated: false });
-                  }
+                // While the post-send window is open, keep the new message pinned
+                // to the top as the list re-measures (answer streams in below it).
+                onContentSizeChange={() => { if (pinIndex.current != null) tryPin(); }}
+                // If the target row isn't measured yet, render the tail then retry.
+                onScrollToIndexFailed={(info) => {
+                  listRef.current?.scrollToEnd({ animated: false });
+                  setTimeout(tryPin, 120);
                 }}
-                // Track whether we're near the bottom so we only auto-follow when
-                // the user hasn't scrolled up to read older messages.
-                onScroll={(e) => {
-                  const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
-                  atBottom.current =
-                    contentOffset.y + layoutMeasurement.height >= contentSize.height - 140;
-                }}
-                scrollEventThrottle={32}
                 // Thinking dots show only until the first token streams in.
                 ListFooterComponent={isLoading && !messages.some((m) => m.isStreaming) ? <ThinkingDots label={research} /> : null}
                 keyExtractor={(m) => m.id}
-                // Top: clear the floating header. Bottom: a tall spacer + input
-                // height so the newest USER message can scroll up near the top,
-                // leaving room for the AI answer to flow in below it (Gemini-style).
+                // Top: clear the floating header. Bottom: a tall spacer so the new
+                // USER message can scroll up to the top, leaving room for the AI
+                // answer to flow in below it (ChatGPT/Gemini-style).
                 contentContainerStyle={[
                   styles.listContent,
-                  { paddingTop: insets.top + HEADER_HEIGHT + 10, paddingBottom: barHeight + bottomSpacer + (kbOpen ? kbHeight + 80 : 0) },
+                  { paddingTop: insets.top + HEADER_HEIGHT + 10, paddingBottom: barHeight + bottomSpacer },
                 ]}
                 renderItem={({ item }) => <MessageBubble message={item} onRefresh={regenerate} />}
               />
