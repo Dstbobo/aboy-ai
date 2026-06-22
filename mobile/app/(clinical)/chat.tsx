@@ -87,9 +87,12 @@ export default function ChatScreen() {
     );
     setTimeout(() => { pendingScroll.current = false; }, 450);
   }
-  // Tall bottom spacer so the latest user message can scroll up to the top,
-  // leaving the screen below it for the AI answer to flow into.
-  const bottomSpacer = Math.round(screenHeight * 0.7);
+  // Small gap below the last message so it rests just ABOVE the input bar (not
+  // flung to the top, not hidden behind the bar). Standard chat behaviour.
+  const bottomSpacer = 16;
+  // Whether the user is at/near the bottom — used to follow the streaming answer
+  // (auto-scroll) without fighting them when they've scrolled up to read.
+  const atBottom = useRef(true);
   const [inputText, setInputText] = useState('');
   // Live research status (Understanding → Searching → Analyzing → Generating).
   // Shown beside the thinking dots until the first answer token streams in.
@@ -497,12 +500,22 @@ export default function ChatScreen() {
                 data={data}
                 style={styles.flex}
                 keyboardShouldPersistTaps="handled"
-                // While the post-send window is open, keep pinning to the bottom
-                // as the list grows/re-measures (don't clear the flag here — the
-                // timeout in jumpToBottom does, so several growths all scroll).
+                // Pin to the bottom as the list grows — on send (pendingScroll)
+                // or while the user is already at the bottom (so the streaming
+                // answer follows). Instant = sharp, no animation stutter.
                 onContentSizeChange={() => {
-                  if (pendingScroll.current) listRef.current?.scrollToEnd({ animated: false });
+                  if (pendingScroll.current || atBottom.current) {
+                    listRef.current?.scrollToEnd({ animated: false });
+                  }
                 }}
+                // Track whether we're near the bottom so we only auto-follow when
+                // the user hasn't scrolled up to read older messages.
+                onScroll={(e) => {
+                  const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
+                  atBottom.current =
+                    contentOffset.y + layoutMeasurement.height >= contentSize.height - 140;
+                }}
+                scrollEventThrottle={32}
                 // Thinking dots show only until the first token streams in.
                 ListFooterComponent={isLoading && !messages.some((m) => m.isStreaming) ? <ThinkingDots label={research} /> : null}
                 keyExtractor={(m) => m.id}
