@@ -530,7 +530,7 @@ export default function ChatScreen() {
                 // leaving room for the AI answer to flow in below it (Gemini-style).
                 contentContainerStyle={[
                   styles.listContent,
-                  { paddingTop: insets.top + HEADER_HEIGHT + 10, paddingBottom: barHeight + bottomSpacer + (kbOpen ? kbHeight : 0) },
+                  { paddingTop: insets.top + HEADER_HEIGHT + 10, paddingBottom: barHeight + bottomSpacer + (kbOpen ? kbHeight + 80 : 0) },
                 ]}
                 renderItem={({ item }) => <MessageBubble message={item} onRefresh={regenerate} />}
               />
