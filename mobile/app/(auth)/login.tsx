@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, StyleSheet, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { Text, TextInput, Button, HelperText } from 'react-native-paper';
 import { useRouter } from 'expo-router';
-import { signIn } from '@/services/auth.service';
+import { signIn, setLastAuthMethod } from '@/services/auth.service';
 import { useAuthStore } from '@/stores/auth.store';
 import { COLORS } from '@/constants/theme';
 import type { UserRole } from '@/constants/roles';
@@ -29,6 +29,7 @@ export default function LoginScreen() {
         { id: user.id, email: user.email, role: user.role as UserRole, fullName: user.fullName },
         token,
       );
+      await setLastAuthMethod('email');
       router.replace('/(clinical)/chat');
     } catch (e: any) {
       setError(e.message ?? 'Login failed. Please check your credentials.');

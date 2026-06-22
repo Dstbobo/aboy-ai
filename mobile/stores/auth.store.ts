@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import * as SecureStore from 'expo-secure-store';
 import type { UserRole } from '@/constants/roles';
+import { markOnboardedOnServer } from '@/services/auth.service';
 
 export interface User {
   id: string;
@@ -45,6 +46,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   completeOnboarding: async () => {
     await SecureStore.deleteItemAsync(ONBOARDING_KEY);
     set({ needsOnboarding: false });
+    // Persist server-side so a returning Google user (even on a fresh install)
+    // skips onboarding next time.
+    try {
+      await markOnboardedOnServer();
+    } catch {}
   },
 
   // Used by "Change Role" — re-enters the onboarding flow for an already
