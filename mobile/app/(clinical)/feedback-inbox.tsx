@@ -1,5 +1,5 @@
-import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, RefreshControl } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, RefreshControl, TouchableOpacity } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { api } from '@/services/api';
@@ -19,6 +19,21 @@ export default function FeedbackInboxScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<'all' | 'bug' | 'idea' | 'general'>('all');
+
+  const counts = useMemo(() => ({
+    all: items.length,
+    bug: items.filter((i) => i.category === 'bug').length,
+    idea: items.filter((i) => i.category === 'idea').length,
+    general: items.filter((i) => i.category === 'general').length,
+  }), [items]);
+  const visible = filter === 'all' ? items : items.filter((i) => i.category === filter);
+  const TABS: { key: typeof filter; label: string }[] = [
+    { key: 'all', label: `All ${counts.all}` },
+    { key: 'bug', label: `🐞 ${counts.bug}` },
+    { key: 'idea', label: `💡 ${counts.idea}` },
+    { key: 'general', label: `💬 ${counts.general}` },
+  ];
 
   const load = useCallback(async () => {
     setError(null);
@@ -41,14 +56,22 @@ export default function FeedbackInboxScreen() {
         <View style={styles.center}><ActivityIndicator color={COLORS.primary} /></View>
       ) : (
         <FlatList
-          data={items}
+          data={visible}
           keyExtractor={(i) => String(i.id)}
           contentContainerStyle={styles.list}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
           ListHeaderComponent={
-            <Text style={styles.count}>
-              {items.length} message{items.length === 1 ? '' : 's'} from testers
-            </Text>
+            <View style={styles.tabs}>
+              {TABS.map((t) => (
+                <TouchableOpacity
+                  key={t.key}
+                  style={[styles.tab, filter === t.key && styles.tabActive]}
+                  onPress={() => setFilter(t.key)}
+                >
+                  <Text style={[styles.tabText, filter === t.key && styles.tabTextActive]}>{t.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           }
           ListEmptyComponent={
             <View style={styles.center}>
@@ -77,7 +100,14 @@ export default function FeedbackInboxScreen() {
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 8 },
   list: { padding: 16, paddingBottom: 40 },
-  count: { fontSize: 13, color: COLORS.textSecondary, marginBottom: 12 },
+  tabs: { flexDirection: 'row', gap: 8, marginBottom: 14 },
+  tab: {
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16,
+    borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.background,
+  },
+  tabActive: { backgroundColor: COLORS.secondary, borderColor: COLORS.primary },
+  tabText: { fontSize: 13, fontWeight: '600', color: COLORS.textSecondary },
+  tabTextActive: { color: COLORS.primaryDark },
   card: {
     backgroundColor: COLORS.surface, borderRadius: 12, padding: 14, marginBottom: 10,
     borderWidth: 1, borderColor: COLORS.border,
