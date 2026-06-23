@@ -1,6 +1,6 @@
 import httpx
 from pydantic import BaseModel
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.config import get_settings
 from app.core.auth.middleware import get_current_user
@@ -85,6 +85,28 @@ async def app_feedback(
     except Exception:
         pass
     return {"status": "submitted"}
+
+
+# Founder accounts allowed to read all tester feedback in-app.
+_FOUNDER_EMAILS = {"dstgloballivefarm@gmail.com", "daniel11dst@gmail.com"}
+
+
+@router.get("/feedback/app/list")
+async def list_app_feedback(
+    user: AuthenticatedUser = Depends(get_current_user),
+) -> list[dict]:
+    """Recent in-app feedback — readable by the founder account(s) only."""
+    if (getattr(user, "email", "") or "").lower() not in _FOUNDER_EMAILS:
+        raise HTTPException(status_code=403, detail="Not allowed")
+    db = await get_db()
+    res = (
+        await db.table("app_feedback")
+        .select("id, category, message, created_at")
+        .order("created_at", desc=True)
+        .limit(100)
+        .execute()
+    )
+    return res.data or []
 
 
 @router.post("/feedback/rate")
