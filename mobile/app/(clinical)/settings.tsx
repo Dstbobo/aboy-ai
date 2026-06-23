@@ -70,6 +70,8 @@ export default function SettingsScreen() {
 
   const role = (profile?.role ?? user?.role ?? 'student_med') as UserRole;
   const pending = profile?.pending_role_request;
+  const isFounder = ['dstgloballivefarm@gmail.com', 'daniel11dst@gmail.com']
+    .includes((profile?.email ?? user?.email ?? '').toLowerCase());
 
   useEffect(() => {
     api
@@ -212,6 +214,12 @@ export default function SettingsScreen() {
         <Text style={styles.sectionLabel}>FEEDBACK</Text>
         <View style={styles.card}>
           <Row icon="message-text-outline" label="Send feedback" onPress={() => setFeedbackOpen(true)} />
+          {isFounder && (
+            <>
+              <View style={styles.legalDivider} />
+              <Row icon="inbox-arrow-down-outline" label="View tester feedback" onPress={() => router.push('/(clinical)/feedback-inbox')} />
+            </>
+          )}
         </View>
 
         <Text style={styles.sectionLabel}>LEGAL</Text>
