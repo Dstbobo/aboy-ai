@@ -45,6 +45,48 @@ async def _notify_discord(audit_id: str, model: str, comment: str) -> None:
         pass
 
 
+class AppFeedback(BaseModel):
+    message: str
+    category: str = "general"   # 'bug' | 'idea' | 'general'
+
+
+async def _notify_app_feedback(who: str, category: str, message: str) -> None:
+    """Send a tester's free-text feedback straight to the Discord webhook so the
+    founder sees it instantly."""
+    url = get_settings().discord_feedback_webhook
+    if not url:
+        return
+    try:
+        msg = (
+            f":speech_balloon: **Tester feedback** ({category})\n"
+            f"• from: `{who}`\n"
+            f"• {message[:1500]}"
+        )
+        async with httpx.AsyncClient(timeout=8) as c:
+            await c.post(url, json={"content": msg})
+    except Exception:
+        pass
+
+
+@router.post("/feedback/app")
+async def app_feedback(
+    body: AppFeedback,
+    user: AuthenticatedUser = Depends(get_current_user),
+) -> dict:
+    """General in-app feedback (not tied to a specific answer). Pings Discord and
+    best-effort stores in `app_feedback` if that table exists."""
+    who = getattr(user, "email", None) or user.user_id
+    fire_and_forget(_notify_app_feedback(who, body.category, body.message))
+    try:
+        db = await get_db()
+        await db.table("app_feedback").insert({
+            "user_id": user.user_id, "category": body.category, "message": body.message,
+        }).execute()
+    except Exception:
+        pass
+    return {"status": "submitted"}
+
+
 @router.post("/feedback/rate")
 async def rate(body: RateBody, user: AuthenticatedUser = Depends(get_current_user)) -> dict:
     """Thumbs up/down on a specific answer. Upsert: one vote per (user, answer)."""
