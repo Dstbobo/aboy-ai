@@ -37,6 +37,7 @@ interface Profile {
 
 export default function SettingsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const user = useAuthStore((s) => s.user);
   const clearAuth = useAuthStore((s) => s.clearAuth);
   const clearChat = useChatStore((s) => s.clearChat);
@@ -45,6 +46,27 @@ export default function SettingsScreen() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [usage, setUsage] = useState<Usage | null>(null);
   const [rolePickerOpen, setRolePickerOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [feedbackText, setFeedbackText] = useState('');
+  const [feedbackCat, setFeedbackCat] = useState<'bug' | 'idea' | 'general'>('general');
+  const [feedbackBusy, setFeedbackBusy] = useState(false);
+
+  async function submitFeedback() {
+    const msg = feedbackText.trim();
+    if (!msg || feedbackBusy) return;
+    setFeedbackBusy(true);
+    try {
+      await api.post('/api/v1/feedback/app', { message: msg, category: feedbackCat });
+      setFeedbackOpen(false);
+      setFeedbackText('');
+      setFeedbackCat('general');
+      Alert.alert('Thank you', 'Your feedback was sent. It really helps shape Aboy.');
+    } catch {
+      Alert.alert('Could not send', 'Please try again in a moment.');
+    } finally {
+      setFeedbackBusy(false);
+    }
+  }
 
   const role = (profile?.role ?? user?.role ?? 'student_med') as UserRole;
   const pending = profile?.pending_role_request;
@@ -187,6 +209,11 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        <Text style={styles.sectionLabel}>FEEDBACK</Text>
+        <View style={styles.card}>
+          <Row icon="message-text-outline" label="Send feedback" onPress={() => setFeedbackOpen(true)} />
+        </View>
+
         <Text style={styles.sectionLabel}>LEGAL</Text>
         <View style={styles.card}>
           <Row icon="shield-lock-outline" label="Privacy Policy" onPress={() => router.push('/(legal)/privacy')} />
@@ -207,6 +234,43 @@ export default function SettingsScreen() {
         onClose={() => setRolePickerOpen(false)}
         onSelect={submitRoleChange}
       />
+
+      <Modal visible={feedbackOpen} transparent animationType="slide" onRequestClose={() => setFeedbackOpen(false)}>
+        <Pressable style={styles.fbBackdrop} onPress={() => setFeedbackOpen(false)}>
+          <Pressable style={[styles.fbSheet, { paddingBottom: insets.bottom + 16 }]}>
+            <Text style={styles.fbTitle}>Send feedback</Text>
+            <Text style={styles.fbSub}>Tell us what's broken, confusing, or what you'd love to see. It goes straight to the team.</Text>
+            <View style={styles.fbCats}>
+              {(['bug', 'idea', 'general'] as const).map((c) => (
+                <TouchableOpacity
+                  key={c}
+                  style={[styles.fbCat, feedbackCat === c && styles.fbCatActive]}
+                  onPress={() => setFeedbackCat(c)}
+                >
+                  <Text style={[styles.fbCatText, feedbackCat === c && styles.fbCatTextActive]}>
+                    {c === 'bug' ? '🐞 Bug' : c === 'idea' ? '💡 Idea' : '💬 General'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TextInput
+              style={styles.fbInput}
+              placeholder="Type your feedback…"
+              placeholderTextColor={COLORS.textSecondary}
+              value={feedbackText}
+              onChangeText={setFeedbackText}
+              multiline
+            />
+            <TouchableOpacity
+              style={[styles.fbSend, (!feedbackText.trim() || feedbackBusy) && styles.fbSendDisabled]}
+              onPress={submitFeedback}
+              disabled={!feedbackText.trim() || feedbackBusy}
+            >
+              <Text style={styles.fbSendText}>{feedbackBusy ? 'Sending…' : 'Send'}</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </AppScreen>
   );
 }
@@ -338,4 +402,31 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, paddingVertical: 9, fontSize: 14.5, color: COLORS.text },
   pickRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 11 },
+
+  fbBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  fbSheet: {
+    backgroundColor: '#ffffff', borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingHorizontal: 20, paddingTop: 18,
+  },
+  fbTitle: { fontSize: 18, fontWeight: '800', color: COLORS.text },
+  fbSub: { fontSize: 13.5, color: COLORS.textSecondary, lineHeight: 20, marginTop: 6, marginBottom: 14 },
+  fbCats: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  fbCat: {
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 18,
+    borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.background,
+  },
+  fbCatActive: { backgroundColor: COLORS.secondary, borderColor: COLORS.primary },
+  fbCatText: { fontSize: 13, color: COLORS.textSecondary, fontWeight: '600' },
+  fbCatTextActive: { color: COLORS.primaryDark },
+  fbInput: {
+    borderWidth: 1, borderColor: COLORS.border, borderRadius: 12,
+    padding: 14, fontSize: 15, color: COLORS.text, minHeight: 110,
+    textAlignVertical: 'top', backgroundColor: COLORS.background,
+  },
+  fbSend: {
+    backgroundColor: COLORS.primary, borderRadius: 14, height: 50,
+    alignItems: 'center', justifyContent: 'center', marginTop: 14,
+  },
+  fbSendDisabled: { opacity: 0.5 },
+  fbSendText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 });
