@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import { signIn, setLastAuthMethod } from '@/services/auth.service';
 import { useAuthStore } from '@/stores/auth.store';
 import { COLORS } from '@/constants/theme';
+import { AboyLogo } from '@/components/brand/AboyLogo';
 import type { UserRole } from '@/constants/roles';
 
 export default function LoginScreen() {
@@ -45,7 +46,7 @@ export default function LoginScreen() {
     >
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
-          <Text style={styles.logo}>🏥</Text>
+          <AboyLogo size={72} />
           <Text style={styles.title}>Aboy AI</Text>
           <Text style={styles.subtitle}>Healthcare AI for students</Text>
         </View>

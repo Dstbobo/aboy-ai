@@ -14,6 +14,7 @@ import { supabase } from '@/services/auth.service';
 import { useAuthStore } from '@/stores/auth.store';
 import { api } from '@/services/api';
 import { COLORS } from '@/constants/theme';
+import { AboyLogo } from '@/components/brand/AboyLogo';
 import type { UserRole } from '@/constants/roles';
 
 export default function RegisterScreen() {
@@ -99,7 +100,7 @@ export default function RegisterScreen() {
     >
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
-          <Text style={styles.logo}>🏥</Text>
+          <AboyLogo size={64} />
           <Text style={styles.title}>Create account</Text>
           <Text style={styles.subtitle}>Free for students & healthcare workers</Text>
         </View>
