@@ -4,6 +4,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useUIStore } from '@/stores/ui.store';
+import { AboyLogo } from '@/components/brand/AboyLogo';
 import { COLORS } from '@/constants/theme';
 
 interface AppHeaderProps {
@@ -49,9 +50,7 @@ export function AppHeader({
             <Text style={styles.title}>{title}</Text>
           ) : (
             <View style={styles.brand}>
-              <View style={styles.logo}>
-                <Text style={styles.logoLetter}>A</Text>
-              </View>
+              <AboyLogo size={26} />
               <Text style={styles.brandName}>Aboy AI</Text>
             </View>
           )}
@@ -103,15 +102,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   brand: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  logo: {
-    width: 26,
-    height: 26,
-    borderRadius: 7,
-    backgroundColor: COLORS.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logoLetter: { color: '#fff', fontSize: 16, fontWeight: '800' },
   brandName: { fontSize: 17, fontWeight: '700', color: COLORS.text },
   title: { fontSize: 17, fontWeight: '700', color: COLORS.text },
 });

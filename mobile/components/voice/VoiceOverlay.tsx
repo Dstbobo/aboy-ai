@@ -18,6 +18,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import { useUIStore } from '@/stores/ui.store';
 import { useAuthStore } from '@/stores/auth.store';
 import { LiveSession, type LiveStatus } from '@/services/geminiLive';
+import { AboyLogo } from '@/components/brand/AboyLogo';
 import { COLORS } from '@/constants/theme';
 
 export function VoiceOverlay() {
@@ -185,7 +186,7 @@ export function VoiceOverlay() {
           ) : (
             <View style={styles.centerBlock}>
               <View style={styles.logo}>
-                <Text style={styles.logoLetter}>A</Text>
+                <AboyLogo size={72} />
               </View>
               <Text style={styles.greeting}>How can I help, {firstName}?</Text>
               <Text style={styles.statusLine}>{statusLine}</Text>
@@ -284,11 +285,7 @@ const styles = StyleSheet.create({
   liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: COLORS.error },
 
   centerBlock: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
-  logo: {
-    width: 72, height: 72, borderRadius: 20,
-    backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center', marginBottom: 20,
-  },
-  logoLetter: { color: '#fff', fontSize: 40, fontWeight: '800' },
+  logo: { marginBottom: 20 },
   greeting: { fontSize: 26, fontWeight: '800', color: COLORS.text, textAlign: 'center' },
   statusLine: { fontSize: 15, color: COLORS.textSecondary, marginTop: 12 },
   statusLineSmall: { fontSize: 13, color: COLORS.textSecondary, textAlign: 'center', marginBottom: 10 },
