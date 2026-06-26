@@ -29,7 +29,7 @@
         "backgroundColor": "#d9f0f8"
       },
       "package": "com.aboyhealth.aboyai",
-      "versionCode": 6,
+      "versionCode": 7,
       "permissions": [
         "NOTIFICATIONS",
         "RECEIVE_BOOT_COMPLETED",
