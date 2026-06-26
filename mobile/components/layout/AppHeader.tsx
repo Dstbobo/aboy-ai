@@ -50,8 +50,7 @@ export function AppHeader({
             <Text style={styles.title}>{title}</Text>
           ) : (
             <View style={styles.brand}>
-              <AboyLogo size={26} />
-              <Text style={styles.brandName}>Aboy AI</Text>
+              <AboyLogo size={32} />
             </View>
           )}
         </View>
