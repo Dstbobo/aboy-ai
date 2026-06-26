@@ -30,6 +30,7 @@ import { useUIStore } from '@/stores/ui.store';
 import { streamQuery } from '@/services/streamQuery';
 import { useImageAnalysis } from '@/hooks/useImageAnalysis';
 import { analyzeDocument } from '@/services/document.service';
+import { maybeAskForReview } from '@/services/review.service';
 import { COLORS } from '@/constants/theme';
 import { useAuthStore } from '@/stores/auth.store';
 import { useProgressStore } from '@/stores/progress.store';
@@ -317,6 +318,10 @@ export default function ChatScreen() {
           if (!started) {
             // No tokens arrived (e.g. empty) — drop the loading state.
             addAssistantMessage('err' + Date.now(), 'No response received. Please try again.', [], false);
+          } else {
+            // Successful answer — ask for a Play rating on the 2nd one this
+            // session (Google throttles how often it actually shows).
+            maybeAskForReview();
           }
           clearIfCurrent();
           setResearch(null);
