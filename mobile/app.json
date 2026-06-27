@@ -29,7 +29,7 @@
         "backgroundColor": "#d9f0f8"
       },
       "package": "com.aboyai.app",
-      "versionCode": 7,
+      "versionCode": 8,
       "permissions": [
         "NOTIFICATIONS",
         "RECEIVE_BOOT_COMPLETED",
