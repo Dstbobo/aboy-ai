@@ -17,7 +17,7 @@
     ],
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.aboyhealth.aboyai",
+      "bundleIdentifier": "com.aboyai.app",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Aboy AI uses the microphone so you can ask questions by voice.",
         "NSSpeechRecognitionUsageDescription": "Aboy AI converts your speech to text so you can ask questions by voice."
@@ -28,7 +28,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#d9f0f8"
       },
-      "package": "com.aboyhealth.aboyai",
+      "package": "com.aboyai.app",
       "versionCode": 7,
       "permissions": [
         "NOTIFICATIONS",
