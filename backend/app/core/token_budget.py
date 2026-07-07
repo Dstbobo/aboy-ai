@@ -7,7 +7,7 @@ from datetime import date, datetime, timezone
 from app.db.supabase import get_db
 from app.core.dev_accounts import is_unlimited
 
-DEFAULT_DAILY_LIMIT = 200000
+DEFAULT_DAILY_LIMIT = 50000
 LIMIT_MESSAGE = "You have reached your daily limit. Come back tomorrow to continue learning."
 
 
