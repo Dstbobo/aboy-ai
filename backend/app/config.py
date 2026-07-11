@@ -28,9 +28,9 @@ class Settings(BaseSettings):
     anthropic_haiku_model: str = "claude-haiku-4-5-20251001"  # fast / simple
     max_tokens: int = 2048
 
-    # Answer-LLM provider: "groq" (cheap, scales) or "anthropic" (Claude).
-    # Switch back anytime via the LLM_PROVIDER env var — no code change.
-    llm_provider: str = "groq"
+    # Answer-LLM provider: "anthropic" (Claude) or "groq" (cheap alternative).
+    # Groq path stays available via LLM_PROVIDER=groq, but default is Claude.
+    llm_provider: str = "anthropic"
     groq_api_key: str = ""
     groq_model: str = "llama-3.3-70b-versatile"     # strong  (maps to Sonnet tier)
     groq_fast_model: str = "llama-3.1-8b-instant"   # fast    (maps to Haiku tier)
