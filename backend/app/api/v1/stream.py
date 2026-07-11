@@ -131,19 +131,13 @@ async def _event_generator(
     full_text = ""
     usage: dict = {}
     sfilter = StreamFilter()  # strip references section + "see diagram below" phrases
-    try:
-        async for chunk in stream_response(system_prompt, user_prompt, model=model, max_tokens=max_tokens, usage_out=usage):
-            if first_token_at is None:
-                first_token_at = time.monotonic()
-            full_text += chunk
-            safe = sfilter.feed(chunk)
-            if safe:
-                yield f"data: {json.dumps({'type': 'text', 'content': safe})}\n\n"
-    except Exception as _diag_e:  # TEMP DIAGNOSTIC — remove after debugging Groq
-        import traceback as _tb
-        _msg = f"[DIAG] {type(_diag_e).__name__}: {str(_diag_e)[:400]}"
-        yield f"data: {json.dumps({'type': 'text', 'content': _msg})}\n\n"
-        _tb.print_exc()
+    async for chunk in stream_response(system_prompt, user_prompt, model=model, max_tokens=max_tokens, usage_out=usage):
+        if first_token_at is None:
+            first_token_at = time.monotonic()
+        full_text += chunk
+        safe = sfilter.feed(chunk)
+        if safe:
+            yield f"data: {json.dumps({'type': 'text', 'content': safe})}\n\n"
     tail = sfilter.flush()
     if tail:
         yield f"data: {json.dumps({'type': 'text', 'content': tail})}\n\n"

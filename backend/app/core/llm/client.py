@@ -88,15 +88,20 @@ async def stream_response(
                 {"role": "user", "content": user_prompt},
             ],
             stream=True,
-            stream_options={"include_usage": True},
         )
         async for chunk in stream:
             if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
-            # Final chunk (choices empty) carries usage when include_usage is set.
-            if usage_out is not None and getattr(chunk, "usage", None):
-                usage_out["input"] = chunk.usage.prompt_tokens
-                usage_out["output"] = chunk.usage.completion_tokens
+            # Groq includes token usage on the final chunk (under x_groq.usage,
+            # or chunk.usage on newer SDKs) — no stream_options needed.
+            if usage_out is not None:
+                u = getattr(chunk, "usage", None)
+                xg = getattr(chunk, "x_groq", None)
+                if xg is not None:
+                    u = getattr(xg, "usage", None) or u
+                if u is not None:
+                    usage_out["input"] = getattr(u, "prompt_tokens", 0)
+                    usage_out["output"] = getattr(u, "completion_tokens", 0)
         return
 
     # Anthropic (Claude) — used when LLM_PROVIDER=anthropic.
