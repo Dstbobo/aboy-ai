@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     openai_api_key: str = ""  # fallback only
     gemini_api_key: str = ""  # voice transcription + vision + (currently) answers
     gemini_model: str = "gemini-2.5-flash"            # strong  (maps to Sonnet tier)
-    gemini_fast_model: str = "gemini-2.5-flash-lite"  # fast    (maps to Haiku tier)
+    gemini_fast_model: str = "gemini-2.5-flash"       # fast    (flash-lite is 404 for this key)
 
     # LLM config — model tiering
     anthropic_model: str = "claude-sonnet-4-6"          # detailed / complex
