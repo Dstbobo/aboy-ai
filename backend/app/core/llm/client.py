@@ -1,3 +1,4 @@
+import json
 from functools import lru_cache
 
 import anthropic
@@ -35,6 +36,37 @@ def _groq_model_for(model: str | None) -> str:
     return settings.groq_fast_model if is_fast else settings.groq_model
 
 
+# ── Gemini (REST, same API the working voice/vision path uses) ──
+
+_GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
+
+
+def _gemini_model_for(model: str | None) -> str:
+    """Map the haiku/sonnet tier to Gemini models (fast vs standard)."""
+    settings = get_settings()
+    is_fast = bool(model) and (
+        model == settings.anthropic_haiku_model or "haiku" in (model or "")
+    )
+    return settings.gemini_fast_model if is_fast else settings.gemini_model
+
+
+def _gemini_payload(system_prompt: str, user_prompt: str, max_tokens: int) -> dict:
+    return {
+        "systemInstruction": {"parts": [{"text": system_prompt}]},
+        "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
+        "generationConfig": {"maxOutputTokens": max_tokens},
+    }
+
+
+@lru_cache
+def _get_gemini_http() -> httpx.AsyncClient:
+    return httpx.AsyncClient(
+        limits=httpx.Limits(max_keepalive_connections=20, max_connections=40, keepalive_expiry=60),
+        timeout=httpx.Timeout(120.0, connect=5.0),
+        headers={"Content-Type": "application/json"},
+    )
+
+
 # ── Public API (unchanged signatures — the pipeline calls these) ──
 
 async def generate_response(
@@ -43,6 +75,22 @@ async def generate_response(
     """Returns (response_text, input_tokens, output_tokens)."""
     settings = get_settings()
     max_toks = max_tokens or settings.max_tokens
+
+    if settings.llm_provider == "gemini":
+        http = _get_gemini_http()
+        url = f"{_GEMINI_BASE}/{_gemini_model_for(model)}:generateContent"
+        resp = await http.post(
+            url,
+            headers={"x-goog-api-key": settings.gemini_api_key},
+            json=_gemini_payload(system_prompt, user_prompt, max_toks),
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        candidates = data.get("candidates", [])
+        parts = candidates[0].get("content", {}).get("parts", []) if candidates else []
+        text = "".join(p.get("text", "") for p in parts)
+        meta = data.get("usageMetadata", {})
+        return text, meta.get("promptTokenCount", 0), meta.get("candidatesTokenCount", 0)
 
     if settings.llm_provider == "groq":
         client = _get_groq_client()
@@ -77,6 +125,39 @@ async def stream_response(
     """Yields text chunks for SSE streaming. Fills usage_out with token counts."""
     settings = get_settings()
     max_toks = max_tokens or settings.max_tokens
+
+    if settings.llm_provider == "gemini":
+        http = _get_gemini_http()
+        url = f"{_GEMINI_BASE}/{_gemini_model_for(model)}:streamGenerateContent?alt=sse"
+        async with http.stream(
+            "POST",
+            url,
+            headers={"x-goog-api-key": settings.gemini_api_key},
+            json=_gemini_payload(system_prompt, user_prompt, max_toks),
+        ) as resp:
+            if resp.status_code != 200:
+                body = (await resp.aread()).decode("utf-8", errors="replace")[:300]
+                raise RuntimeError(f"Gemini stream error {resp.status_code}: {body}")
+            async for line in resp.aiter_lines():
+                if not line.startswith("data: "):
+                    continue
+                payload = line[6:].strip()
+                if not payload or payload == "[DONE]":
+                    continue
+                try:
+                    data = json.loads(payload)
+                except Exception:
+                    continue
+                candidates = data.get("candidates", [])
+                if candidates:
+                    for p in candidates[0].get("content", {}).get("parts", []):
+                        if p.get("text"):
+                            yield p["text"]
+                meta = data.get("usageMetadata")
+                if usage_out is not None and meta:
+                    usage_out["input"] = meta.get("promptTokenCount", 0)
+                    usage_out["output"] = meta.get("candidatesTokenCount", 0)
+        return
 
     if settings.llm_provider == "groq":
         client = _get_groq_client()

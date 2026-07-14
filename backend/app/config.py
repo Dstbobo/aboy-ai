@@ -20,17 +20,18 @@ class Settings(BaseSettings):
     voyage_api_key: str
     tavily_api_key: str
     openai_api_key: str = ""  # fallback only
-    gemini_api_key: str = ""  # voice transcription + vision
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_api_key: str = ""  # voice transcription + vision + (currently) answers
+    gemini_model: str = "gemini-2.5-flash"            # strong  (maps to Sonnet tier)
+    gemini_fast_model: str = "gemini-2.5-flash-lite"  # fast    (maps to Haiku tier)
 
     # LLM config — model tiering
     anthropic_model: str = "claude-sonnet-4-6"          # detailed / complex
     anthropic_haiku_model: str = "claude-haiku-4-5-20251001"  # fast / simple
     max_tokens: int = 2048
 
-    # Answer-LLM provider: "anthropic" (Claude) or "groq" (cheap alternative).
-    # Groq path stays available via LLM_PROVIDER=groq, but default is Claude.
-    llm_provider: str = "anthropic"
+    # Answer-LLM provider: "gemini" (free tier, current), "anthropic" (Claude,
+    # switch back via LLM_PROVIDER=anthropic once credit is added), or "groq".
+    llm_provider: str = "gemini"
     groq_api_key: str = ""
     groq_model: str = "llama-3.3-70b-versatile"     # strong  (maps to Sonnet tier)
     groq_fast_model: str = "llama-3.1-8b-instant"   # fast    (maps to Haiku tier)
