@@ -58,7 +58,7 @@ export function VideoMode() {
           quality: 0.4,
           skipProcessing: true,
           shutterSound: false,
-        } as any);
+        });
         if (!photo?.uri) return;
         // Scale down to max 480px width before sending (smaller payloads,
         // faster round-trips, what the Live API actually needs).

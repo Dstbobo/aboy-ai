@@ -43,7 +43,7 @@ export function CameraSnap() {
         quality: 0.6,
         skipProcessing: true,
         shutterSound: false,
-      } as any);
+      });
       if (photo?.uri) setShot(photo.uri);
     } catch {
       // ignore — user can tap again

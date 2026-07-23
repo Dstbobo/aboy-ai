@@ -100,7 +100,7 @@ export function VoiceOverlay() {
         const cam = cameraRef.current;
         const session = sessionRef.current;
         if (!cam || !session || !session.isReady) return;
-        const photo = await cam.takePictureAsync({ base64: false, quality: 0.4, skipProcessing: true, shutterSound: false } as any);
+        const photo = await cam.takePictureAsync({ base64: false, quality: 0.4, skipProcessing: true, shutterSound: false });
         if (!photo?.uri) return;
         const scaled = await ImageManipulator.manipulateAsync(
           photo.uri,

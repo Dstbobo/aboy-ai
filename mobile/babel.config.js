@@ -3,7 +3,8 @@ module.exports = function (api) {
   return {
     presets: ['babel-preset-expo'],
     plugins: [
-      'react-native-reanimated/plugin',
+      // Reanimated 4 (SDK 54) moved its worklets Babel plugin here. Must be last.
+      'react-native-worklets/plugin',
     ],
   };
 };

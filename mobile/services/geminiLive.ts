@@ -1,5 +1,10 @@
-import { Audio } from 'expo-av';
-import * as FileSystem from 'expo-file-system';
+import {
+  createAudioPlayer,
+  setAudioModeAsync,
+  requestRecordingPermissionsAsync,
+  type AudioPlayer,
+} from 'expo-audio';
+import * as FileSystem from 'expo-file-system/legacy';
 import LiveAudioStream from 'react-native-live-audio-stream';
 
 // Primary: FastAPI backend /ws/live proxy. Fallback: standalone Node proxy.
@@ -109,7 +114,7 @@ export class LiveSession {
   private userId: string | null;
   private micActive = false;
   private pcmChunks: string[] = []; // base64 PCM16 @24k from Gemini (current turn)
-  private sound: Audio.Sound | null = null;
+  private player: AudioPlayer | null = null;
   private closed = false;
   private setupDone = false;
   private chunksSent = 0;
@@ -148,19 +153,19 @@ export class LiveSession {
     // Request microphone permission BEFORE starting capture. Without this the
     // native PCM recorder silently produces no audio on Android.
     try {
-      const perm = await Audio.requestPermissionsAsync();
+      const perm = await requestRecordingPermissionsAsync();
       log('mic permission granted =', perm.granted);
       if (!perm.granted) {
         this.cb.onStatus?.('error');
         throw new Error('Microphone permission denied');
       }
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: false,
+      await setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
+        shouldPlayInBackground: false,
         // Route playback to the loudspeaker (not the earpiece). Combined with
         // audioSource=6 (VOICE_RECOGNITION, hardware AEC) this prevents echo.
-        playThroughEarpieceAndroid: false,
+        shouldRouteThroughEarpiece: false,
       });
     } catch (e) {
       log('audio setup failed:', (e as Error)?.message);
@@ -417,15 +422,16 @@ export class LiveSession {
       await this.stopPlayback();
       log('playing AI audio clip', path.split('/').pop());
       this.playingBack = true; // half-duplex: mic suppressed from here
-      const { sound } = await Audio.Sound.createAsync({ uri: path }, { shouldPlay: true });
-      this.sound = sound;
-      sound.setOnPlaybackStatusUpdate((st: any) => {
+      const player = createAudioPlayer({ uri: path });
+      this.player = player;
+      player.addListener('playbackStatusUpdate', (st: { didJustFinish?: boolean }) => {
         if (st.didJustFinish) {
           log('AI audio finished — mic resumed');
           this.stopPlayback();
           this.cb.onStatus?.('listening');
         }
       });
+      player.play();
     } catch (e) {
       log('playback failed:', (e as Error)?.message);
       this.playingBack = false;
@@ -433,13 +439,12 @@ export class LiveSession {
   }
 
   private async stopPlayback() {
-    const s = this.sound;
-    this.sound = null;
+    const p = this.player;
+    this.player = null;
     this.playingBack = false; // mic resumes on any playback teardown
-    if (s) {
+    if (p) {
       try {
-        await s.stopAsync();
-        await s.unloadAsync();
+        p.remove(); // releases the native player and stops playback
       } catch {}
     }
   }
@@ -459,7 +464,7 @@ export class LiveSession {
 
 // ── helpers ──
 
-// Wrap raw base64 PCM16LE into a base64 WAV (so expo-av can play it).
+// Wrap raw base64 PCM16LE into a base64 WAV (so expo-audio can play it).
 function pcm16ToWavBase64(pcmBase64: string, sampleRate: number): string {
   const pcm = base64ToBytes(pcmBase64);
   const numChannels = 1;
