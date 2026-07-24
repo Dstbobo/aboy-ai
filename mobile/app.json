@@ -29,7 +29,7 @@
         "backgroundColor": "#d9f0f8"
       },
       "package": "con.aboyai.com",
-      "versionCode": 11,
+      "versionCode": 30,
       "permissions": [
         "NOTIFICATIONS",
         "RECEIVE_BOOT_COMPLETED",
