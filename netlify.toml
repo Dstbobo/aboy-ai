@@ -17,6 +17,11 @@
   to = "/terms.html"
   status = 200
 
+[[redirects]]
+  from = "/delete"
+  to = "/delete.html"
+  status = 200
+
 # ── Security + performance headers (helps Core Web Vitals & trust) ──
 [[headers]]
   for = "/*"
