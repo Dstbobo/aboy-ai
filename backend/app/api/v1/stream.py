@@ -131,13 +131,16 @@ async def _event_generator(
     full_text = ""
     usage: dict = {}
     sfilter = StreamFilter()  # strip references section + "see diagram below" phrases
-    async for chunk in stream_response(system_prompt, user_prompt, model=model, max_tokens=max_tokens, usage_out=usage):
-        if first_token_at is None:
-            first_token_at = time.monotonic()
-        full_text += chunk
-        safe = sfilter.feed(chunk)
-        if safe:
-            yield f"data: {json.dumps({'type': 'text', 'content': safe})}\n\n"
+    try:
+        async for chunk in stream_response(system_prompt, user_prompt, model=model, max_tokens=max_tokens, usage_out=usage):
+            if first_token_at is None:
+                first_token_at = time.monotonic()
+            full_text += chunk
+            safe = sfilter.feed(chunk)
+            if safe:
+                yield f"data: {json.dumps({'type': 'text', 'content': safe})}\n\n"
+    except Exception as _diag_e:  # TEMP DIAGNOSTIC
+        yield f"data: {json.dumps({'type': 'text', 'content': f'[DIAG] {type(_diag_e).__name__}: {str(_diag_e)[:600]}'})}\n\n"
     tail = sfilter.flush()
     if tail:
         yield f"data: {json.dumps({'type': 'text', 'content': tail})}\n\n"
