@@ -131,14 +131,21 @@ async def _event_generator(
     full_text = ""
     usage: dict = {}
     sfilter = StreamFilter()  # strip references section + "see diagram below" phrases
+    _got_any = False
     try:
         async for chunk in stream_response(system_prompt, user_prompt, model=model, max_tokens=max_tokens, usage_out=usage):
+            _got_any = True
             if first_token_at is None:
                 first_token_at = time.monotonic()
             full_text += chunk
             safe = sfilter.feed(chunk)
             if safe:
                 yield f"data: {json.dumps({'type': 'text', 'content': safe})}\n\n"
+        if not _got_any:  # TEMP DIAGNOSTIC — empty stream, no exception
+            from app.config import get_settings as _gs
+            _s = _gs()
+            _m = _s.openrouter_model if _s.llm_provider == "openrouter" else "-"
+            yield f"data: {json.dumps({'type': 'text', 'content': f'[DIAG] empty stream; provider={_s.llm_provider} model={_m}'})}\n\n"
     except Exception as _diag_e:  # TEMP DIAGNOSTIC
         yield f"data: {json.dumps({'type': 'text', 'content': f'[DIAG] {type(_diag_e).__name__}: {str(_diag_e)[:600]}'})}\n\n"
     tail = sfilter.flush()

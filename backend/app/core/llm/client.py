@@ -190,6 +190,8 @@ async def stream_response(
                     data = json.loads(payload)
                 except Exception:
                     continue
+                if data.get("error"):
+                    raise RuntimeError(f"OpenRouter error: {json.dumps(data['error'])[:400]}")
                 choices = data.get("choices", [])
                 if choices:
                     delta = choices[0].get("delta", {}) or {}
