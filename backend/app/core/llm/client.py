@@ -67,6 +67,35 @@ def _get_gemini_http() -> httpx.AsyncClient:
     )
 
 
+# ── OpenRouter (openrouter.ai — OpenAI-compatible, many models) ──
+
+_OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+
+@lru_cache
+def _get_openrouter_http() -> httpx.AsyncClient:
+    s = get_settings()
+    return httpx.AsyncClient(
+        base_url="https://openrouter.ai/api/v1",
+        limits=httpx.Limits(max_keepalive_connections=20, max_connections=40, keepalive_expiry=60),
+        timeout=httpx.Timeout(120.0, connect=5.0),
+        headers={
+            "Authorization": f"Bearer {s.openrouter_api_key}",
+            "Content-Type": "application/json",
+            # Optional OpenRouter attribution headers (help ranking; harmless).
+            "HTTP-Referer": "https://aboyhealth.com",
+            "X-Title": "Aboy AI",
+        },
+    )
+
+
+def _openai_messages(system_prompt: str, user_prompt: str) -> list[dict]:
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+
+
 # ── Public API (unchanged signatures — the pipeline calls these) ──
 
 async def generate_response(
@@ -75,6 +104,20 @@ async def generate_response(
     """Returns (response_text, input_tokens, output_tokens)."""
     settings = get_settings()
     max_toks = max_tokens or settings.max_tokens
+
+    if settings.llm_provider == "openrouter":
+        http = _get_openrouter_http()
+        resp = await http.post("/chat/completions", json={
+            "model": settings.openrouter_model,
+            "max_tokens": max_toks,
+            "messages": _openai_messages(system_prompt, user_prompt),
+        })
+        resp.raise_for_status()
+        data = resp.json()
+        choices = data.get("choices", [])
+        text = (choices[0].get("message", {}).get("content") or "") if choices else ""
+        u = data.get("usage", {}) or {}
+        return text, u.get("prompt_tokens", 0), u.get("completion_tokens", 0)
 
     if settings.llm_provider == "gemini":
         http = _get_gemini_http()
@@ -125,6 +168,37 @@ async def stream_response(
     """Yields text chunks for SSE streaming. Fills usage_out with token counts."""
     settings = get_settings()
     max_toks = max_tokens or settings.max_tokens
+
+    if settings.llm_provider == "openrouter":
+        http = _get_openrouter_http()
+        async with http.stream("POST", "/chat/completions", json={
+            "model": settings.openrouter_model,
+            "max_tokens": max_toks,
+            "stream": True,
+            "messages": _openai_messages(system_prompt, user_prompt),
+        }) as resp:
+            if resp.status_code != 200:
+                body = (await resp.aread()).decode("utf-8", errors="replace")[:300]
+                raise RuntimeError(f"OpenRouter stream error {resp.status_code}: {body}")
+            async for line in resp.aiter_lines():
+                if not line.startswith("data: "):
+                    continue
+                payload = line[6:].strip()
+                if not payload or payload == "[DONE]":
+                    continue
+                try:
+                    data = json.loads(payload)
+                except Exception:
+                    continue
+                choices = data.get("choices", [])
+                if choices:
+                    delta = choices[0].get("delta", {}) or {}
+                    if delta.get("content"):
+                        yield delta["content"]
+                if usage_out is not None and data.get("usage"):
+                    usage_out["input"] = data["usage"].get("prompt_tokens", 0)
+                    usage_out["output"] = data["usage"].get("completion_tokens", 0)
+        return
 
     if settings.llm_provider == "gemini":
         http = _get_gemini_http()

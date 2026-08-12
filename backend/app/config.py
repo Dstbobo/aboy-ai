@@ -29,12 +29,18 @@ class Settings(BaseSettings):
     anthropic_haiku_model: str = "claude-haiku-4-5-20251001"  # fast / simple
     max_tokens: int = 2048
 
-    # Answer-LLM provider: "gemini" (free tier, current), "anthropic" (Claude,
-    # switch back via LLM_PROVIDER=anthropic once credit is added), or "groq".
-    llm_provider: str = "gemini"
+    # Answer-LLM provider: "openrouter" (many models, free + cheap paid — current),
+    # "gemini", "anthropic" (Claude), or "groq". Switch anytime via LLM_PROVIDER env.
+    llm_provider: str = "openrouter"
     groq_api_key: str = ""
     groq_model: str = "llama-3.3-70b-versatile"     # strong  (maps to Sonnet tier)
     groq_fast_model: str = "llama-3.1-8b-instant"   # fast    (maps to Haiku tier)
+
+    # OpenRouter (openrouter.ai) — one API for many models. Free models now
+    # (":free" suffix), swap to cheap paid ones (e.g. deepseek/deepseek-chat)
+    # after topping up — just change OPENROUTER_MODEL, no code change.
+    openrouter_api_key: str = ""
+    openrouter_model: str = "meta-llama/llama-3.3-70b-instruct:free"
 
     # Redis (cache + rate limiting)
     redis_url: str = ""
