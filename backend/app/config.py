@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     # (":free" suffix), swap to cheap paid ones (e.g. deepseek/deepseek-chat)
     # after topping up — just change OPENROUTER_MODEL, no code change.
     openrouter_api_key: str = ""
-    openrouter_model: str = "meta-llama/llama-3.3-70b-instruct:free"
+    openrouter_model: str = "google/gemma-4-31b-it:free"
 
     # Redis (cache + rate limiting)
     redis_url: str = ""
