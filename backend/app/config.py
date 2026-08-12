@@ -40,7 +40,10 @@ class Settings(BaseSettings):
     # (":free" suffix), swap to cheap paid ones (e.g. deepseek/deepseek-chat)
     # after topping up — just change OPENROUTER_MODEL, no code change.
     openrouter_api_key: str = ""
-    openrouter_model: str = "google/gemma-4-31b-it:free"
+    # Free models are too rate-limited for production; DeepSeek v4 Flash is the
+    # cheapest reliable model (~$0.08/$0.18 per 1M tokens). Works once the
+    # OpenRouter account has credit. Override anytime via OPENROUTER_MODEL.
+    openrouter_model: str = "deepseek/deepseek-v4-flash-0731"
 
     # Redis (cache + rate limiting)
     redis_url: str = ""
