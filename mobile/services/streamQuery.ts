@@ -1,3 +1,4 @@
+import { fetch as expoFetch } from 'expo/fetch';
 import * as SecureStore from 'expo-secure-store';
 import { supabase } from './auth.service';
 import type { Citation, MedicalImage } from '@/stores/chat.store';
@@ -35,9 +36,47 @@ async function authToken(): Promise<string | null> {
   return SecureStore.getItemAsync('aboy_auth_token');
 }
 
+// Minimal streaming UTF-8 decoder (Hermes/New-Arch safe — no TextDecoder needed).
+// Buffers a trailing incomplete multibyte sequence across chunk boundaries.
+function makeUtf8Decoder() {
+  let tail: number[] = [];
+  return (bytes: Uint8Array): string => {
+    const buf = tail.length ? [...tail, ...bytes] : Array.from(bytes);
+    // Find a safe cut point: don't split a multibyte sequence at the end.
+    let cut = buf.length;
+    for (let i = buf.length - 1; i >= 0 && i >= buf.length - 4; i--) {
+      const b = buf[i];
+      if (b < 0x80) { break; }                 // ASCII byte — safe boundary after it
+      if (b >= 0xc0) {                          // lead byte
+        const need = b >= 0xf0 ? 4 : b >= 0xe0 ? 3 : 2;
+        if (buf.length - i < need) cut = i;     // incomplete — hold it back
+        break;
+      }
+    }
+    tail = buf.slice(cut);
+    const done = buf.slice(0, cut);
+    let out = '';
+    let i = 0;
+    while (i < done.length) {
+      const b = done[i];
+      if (b < 0x80) { out += String.fromCharCode(b); i += 1; }
+      else if (b >= 0xf0) {
+        const cp = ((b & 7) << 18) | ((done[i+1] & 63) << 12) | ((done[i+2] & 63) << 6) | (done[i+3] & 63);
+        const a = cp - 0x10000; out += String.fromCharCode(0xd800 + (a >> 10), 0xdc00 + (a & 0x3ff)); i += 4;
+      } else if (b >= 0xe0) {
+        out += String.fromCharCode(((b & 15) << 12) | ((done[i+1] & 63) << 6) | (done[i+2] & 63)); i += 3;
+      } else {
+        out += String.fromCharCode(((b & 31) << 6) | (done[i+1] & 63)); i += 2;
+      }
+    }
+    return out;
+  };
+}
+
 /**
- * Streams /query/stream over Server-Sent Events using XMLHttpRequest, which is
- * the reliable way to read an incremental response body in React Native.
+ * Streams /query/stream over Server-Sent Events using expo/fetch, which reads an
+ * incremental response body correctly under the New Architecture (RN's
+ * XMLHttpRequest incremental responseText does NOT stream on New Arch).
  * Returns an abort function.
  */
 export async function streamQuery(
@@ -47,13 +86,8 @@ export async function streamQuery(
   h: StreamHandlers,
 ): Promise<() => void> {
   const token = await authToken();
-  const xhr = new XMLHttpRequest();
-  xhr.open('POST', `${API_URL}/api/v1/query/stream`);
-  xhr.setRequestHeader('Content-Type', 'application/json');
-  if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-
-  let seen = 0;        // chars of responseText already processed
-  let buffer = '';     // partial SSE event buffer
+  const controller = new AbortController();
+  let buffer = '';
 
   function process(text: string) {
     buffer += text;
@@ -64,10 +98,7 @@ export async function streamQuery(
       const line = ev.split('\n').find((l) => l.startsWith('data:'));
       if (!line) continue;
       const payload = line.slice(5).trim();
-      if (payload === '[DONE]') {
-        h.onDone();
-        continue;
-      }
+      if (payload === '[DONE]') { h.onDone(); continue; }
       try {
         const msg = JSON.parse(payload);
         if (msg.type === 'start') h.onStart?.(msg.session_id, msg.tier);
@@ -82,28 +113,45 @@ export async function streamQuery(
     }
   }
 
-  xhr.onreadystatechange = () => {
-    if (xhr.readyState >= 3) {
-      const full = xhr.responseText || '';
-      if (full.length > seen) {
-        const fresh = full.slice(seen);
-        seen = full.length;
-        process(fresh);
-      }
-    }
-    if (xhr.readyState === 4) {
-      if (xhr.status >= 400) h.onError({ response: { status: xhr.status, data: safeJson(xhr.responseText) } });
-      else h.onDone();
-    }
-  };
-  xhr.onerror = () => h.onError(new Error('network'));
-  xhr.ontimeout = () => h.onError({ code: 'ECONNABORTED' });
-  xhr.timeout = 120000;
+  (async () => {
+    try {
+      const resp = await expoFetch(`${API_URL}/api/v1/query/stream`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ query, session_id: sessionId, history: history?.slice(-10) }),
+        signal: controller.signal,
+      });
 
-  xhr.send(JSON.stringify({ query, session_id: sessionId, history: history?.slice(-10) }));
+      if (!resp.ok) {
+        let data: any = null;
+        try { data = safeJson(await resp.text()); } catch {}
+        h.onError({ response: { status: resp.status, data } });
+        return;
+      }
+
+      const reader = resp.body?.getReader();
+      if (!reader) { h.onError(new Error('no stream body')); return; }
+      const decode = makeUtf8Decoder();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value && value.length) {
+          const chunk = decode(value);
+          if (chunk) process(chunk);
+        }
+      }
+      h.onDone();
+    } catch (e: any) {
+      if (controller.signal.aborted || e?.name === 'AbortError') return;
+      h.onError(e);
+    }
+  })();
 
   return () => {
-    try { xhr.abort(); } catch {}
+    try { controller.abort(); } catch {}
   };
 }
 
