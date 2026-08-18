@@ -1,5 +1,4 @@
 import logging
-import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -13,12 +12,9 @@ from app.config import get_settings
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# One-time migration secret — Railway env var, deleted after use
-_MIGRATION_SECRET = os.environ.get("MIGRATION_SECRET", "")
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    get_settings().validate_runtime()
     logger.info("Aboy AI backend starting up")
     yield
     logger.info("Aboy AI backend shutting down")
@@ -46,16 +42,10 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-        logger.error("Unhandled exception: %s", exc, exc_info=True)
-        # Surface the error type + message so production 500s are diagnosable.
-        # Safe: exposes the exception class and message, never a full traceback.
+        logger.error("Unhandled exception while handling %s", request.url.path, exc_info=True)
         return JSONResponse(
             status_code=500,
-            content={
-                "detail": "Internal server error",
-                "error_type": type(exc).__name__,
-                "error_message": str(exc)[:300],
-            },
+            content={"detail": "Internal server error"},
         )
 
     @app.get("/health", tags=["health"])
@@ -67,8 +57,11 @@ def create_app() -> FastAPI:
     # Safe to leave in place — returns 403 if secret not set or wrong.
     @app.post("/internal/run-migrations", tags=["internal"])
     async def run_migrations(x_migration_secret: str = Header(default="")) -> dict:
-        if not _MIGRATION_SECRET or x_migration_secret != _MIGRATION_SECRET:
+        settings = get_settings()
+        if not settings.migration_secret or x_migration_secret != settings.migration_secret:
             raise HTTPException(status_code=403, detail="Forbidden")
+        if not settings.supabase_db_password:
+            raise HTTPException(status_code=503, detail="Migration database access is unavailable")
 
         import asyncpg
 
@@ -81,14 +74,12 @@ def create_app() -> FastAPI:
 
         sql = sql_path.read_text(encoding="utf-8")
 
-        # Parse DB password from env or hard-code for one-shot use
         import socket
-        db_password = os.environ.get("SUPABASE_DB_PASSWORD", "452345Dst@ff")
-        project_ref = "szsdvkziqskrfveuemsi"
+        db_password = settings.supabase_db_password
+        project_ref = settings.supabase_project_ref
         direct_host = f"db.{project_ref}.supabase.co"
 
         conn = None
-        attempts = []
 
         # ── 1. Direct host: let the OS choose IPv6 or IPv4 (Supabase DB is IPv6-only) ──
         for port in [5432]:
@@ -99,12 +90,9 @@ def create_app() -> FastAPI:
                     user="postgres", password=db_password,
                     database="postgres", ssl="require", timeout=20,
                 )
-                attempts.append({"host": f"{direct_host}:{port}", "result": "CONNECTED"})
                 break
-            except Exception as e:
-                err = str(e)[:150]
-                attempts.append({"host": f"{direct_host}:{port}", "result": err})
-                logger.warning("Direct %s:%s failed: %s", direct_host, port, err)
+            except Exception:
+                logger.warning("Direct database connection failed for %s:%s", direct_host, port)
 
         # ── 2. Regional poolers via IPv4 (fallback) ──
         if conn is None:
@@ -128,26 +116,21 @@ def create_app() -> FastAPI:
                             password=db_password, database="postgres",
                             ssl="require", timeout=10,
                         )
-                        attempts.append({"host": f"{host}:{port}", "result": "CONNECTED"})
                         break
-                    except Exception as e:
-                        err = str(e)[:120]
-                        attempts.append({"host": f"{host}:{port}", "result": err})
-                        logger.warning("Pooler %s:%s failed: %s", host, port, err)
+                    except Exception:
+                        logger.warning("Database pooler connection failed for %s:%s", host, port)
                 if conn:
                     break
 
         if conn is None:
-            raise HTTPException(status_code=500, detail={
-                "error": "All DB connections failed",
-                "attempts": attempts[:25],
-            })
+            raise HTTPException(status_code=503, detail="Migration database is unavailable")
 
         try:
             await conn.execute(sql)
-        except Exception as e:
+        except Exception:
             await conn.close()
-            raise HTTPException(status_code=500, detail=f"Migration error: {e}")
+            logger.exception("Migration execution failed")
+            raise HTTPException(status_code=500, detail="Migration failed") from None
 
         # Verify tables
         rows = await conn.fetch(

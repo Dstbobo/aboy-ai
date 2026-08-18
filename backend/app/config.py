@@ -1,4 +1,6 @@
 from functools import lru_cache
+from urllib.parse import urlparse
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,6 +16,8 @@ class Settings(BaseSettings):
     supabase_service_key: str
     supabase_anon_key: str
     supabase_jwt_secret: str = ""  # Used to verify Supabase JWTs
+    supabase_db_password: str = ""  # Migration tooling only; never used by clients
+    migration_secret: str = ""  # Protects the disabled-by-default migration route
 
     # AI providers
     anthropic_api_key: str
@@ -74,6 +78,23 @@ class Settings(BaseSettings):
     # (Abuse protection only; the daily token budget is the real cost control.)
     daily_query_limit: int = 300
 
+    # Provider-abuse controls. These are server-side and intentionally bounded.
+    provider_user_requests_per_minute: int = 20
+    provider_global_requests_per_minute: int = 200
+    provider_max_text_chars: int = 40_000
+    provider_timeout_seconds: int = 75
+
+    # Gemini Live controls. Authentication must complete before an upstream
+    # provider socket is created.
+    live_auth_timeout_seconds: int = 8
+    live_idle_timeout_seconds: int = 45
+    live_max_session_seconds: int = 900
+    live_sessions_per_user_per_day: int = 20
+    live_global_sessions_per_minute: int = 60
+    live_max_connections_per_user: int = 1
+    live_max_global_connections: int = 20
+    live_max_message_bytes: int = 1_048_576
+
     # Tavily allowed domains
     tavily_include_domains: list[str] = [
         "pubmed.ncbi.nlm.nih.gov",
@@ -89,6 +110,32 @@ class Settings(BaseSettings):
         "medscape.com",
         "ahajournals.org",
     ]
+
+    @property
+    def supabase_project_ref(self) -> str:
+        host = urlparse(self.supabase_url).hostname or ""
+        return host.split(".", 1)[0]
+
+    def validate_runtime(self) -> None:
+        """Fail closed when a required server-side dependency is not configured."""
+        if not self.supabase_url.startswith("https://"):
+            raise RuntimeError("SUPABASE_URL must use HTTPS")
+        if not self.supabase_project_ref:
+            raise RuntimeError("SUPABASE_URL is invalid")
+        if not self.supabase_service_key or not self.supabase_anon_key:
+            raise RuntimeError("Supabase server configuration is incomplete")
+
+        provider_keys = {
+            "anthropic": self.anthropic_api_key,
+            "gemini": self.gemini_api_key,
+            "groq": self.groq_api_key,
+            "openrouter": self.openrouter_api_key,
+        }
+        selected = self.llm_provider.strip().lower()
+        if selected not in provider_keys:
+            raise RuntimeError("LLM_PROVIDER is not supported")
+        if not provider_keys[selected]:
+            raise RuntimeError(f"The configured {selected} provider is unavailable")
 
 
 @lru_cache
