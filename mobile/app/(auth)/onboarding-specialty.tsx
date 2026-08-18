@@ -5,7 +5,6 @@ import {
 import { Text, Button, ActivityIndicator } from 'react-native-paper';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { ROLE_SPECIALTIES, ROLE_LABELS, type UserRole } from '@/constants/roles';
-import { useAuthStore } from '@/stores/auth.store';
 import { api } from '@/services/api';
 import { COLORS } from '@/constants/theme';
 
@@ -13,7 +12,6 @@ export default function OnboardingSpecialtyScreen() {
   const { role } = useLocalSearchParams<{ role: UserRole }>();
   const [selected, setSelected] = useState<string | null>(null);
   const [loading, setLoading]   = useState(false);
-  const { updateRoleInfo, completeOnboarding } = useAuthStore();
   const router = useRouter();
 
   const specialties = ROLE_SPECIALTIES[role] ?? [];
@@ -23,13 +21,16 @@ export default function OnboardingSpecialtyScreen() {
     if (!selected || !role) return;
     setLoading(true);
     try {
-      // Persist to backend
-      await api.patch('/api/v1/profile', { role, sub_role: selected });
+      // Roles are server-controlled; this creates a reviewable request instead
+      // of letting the client directly rewrite its authorization profile.
+      await api.post('/api/v1/profile/role-change', {
+        to_role: role,
+        to_sub_role: selected,
+      });
     } catch {
-      // Non-fatal — still proceed to home
+      // Non-fatal during onboarding; the account retains its server-side role.
     }
-    // Update local store, then collect role-specific details (final step)
-    await updateRoleInfo(role, selected);
+    // Collect role-specific details while the server retains the current role.
     setLoading(false);
     router.push({ pathname: '/(auth)/onboarding-details', params: { role } });
   }

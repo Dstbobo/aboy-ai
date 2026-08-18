@@ -1,3 +1,5 @@
+import re
+
 import httpx
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -9,12 +11,12 @@ from app.models.user import AuthenticatedUser
 bearer_scheme = HTTPBearer()
 
 # Roles are prefix-validated: 5 categories + system roles.
-_ROLE_PREFIXES = ("student_", "pro_", "ops_", "edu_", "res_")
 _SYSTEM_ROLES = {"admin", "educator"}
+_ROLE_PATTERN = re.compile(r"^(?:student|pro|ops|edu|res)_[a-z0-9][a-z0-9_]{0,55}$")
 
 
 def is_valid_role(role: str) -> bool:
-    return role in _SYSTEM_ROLES or role.startswith(_ROLE_PREFIXES)
+    return role in _SYSTEM_ROLES or bool(_ROLE_PATTERN.fullmatch(role))
 
 
 class _PrefixRoleSet:
