@@ -15,6 +15,50 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  supabase-ephemeral:
+    name: Ephemeral Supabase migration and RLS validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: supabase/setup-cli@v3
+        with:
+          version: latest
+      - name: Start isolated database
+        run: supabase db start >/dev/null
+      - name: Materialize canonical baseline through migration 012
+        run: >-
+          python backend/scripts/materialize_ephemeral_baseline.py
+          --output-dir "${RUNNER_TEMP}/aboy-migrations"
+      - name: Replay baseline and security migrations in order
+        shell: bash
+        run: |
+          set -euo pipefail
+          db_container="supabase_db_aboy-security-ci"
+          docker exec -i "${db_container}" psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres \
+            < "${RUNNER_TEMP}/aboy-migrations/001_through_012.sql"
+          docker exec -i "${db_container}" psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres \
+            < backend/migrations/013_security_boundaries.sql
+          docker exec "${db_container}" psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres \
+            -c "INSERT INTO public.user_intelligence_profile (user_id) VALUES ('00000000-0000-4000-8000-000000000014')"
+          docker exec -i "${db_container}" psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres \
+            < backend/migrations/014_data_privacy_boundaries.sql
+      - name: Validate legacy-orphan handling and every deferred foreign key
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker exec -i supabase_db_aboy-security-ci psql \
+            -X -v ON_ERROR_STOP=1 -U postgres -d postgres \
+            < backend/tests/database/validate_legacy_constraints.sql
+      - name: Run synthetic RLS, identity, ownership, and deletion tests
+        run: supabase test db
+      - name: Stop isolated database
+        if: always()
+        run: supabase stop --no-backup >/dev/null
+
   backend:
     name: Backend security and tests
     runs-on: ubuntu-latest
