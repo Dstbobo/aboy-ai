@@ -6,6 +6,7 @@ import {
 } from 'expo-audio';
 import * as FileSystem from 'expo-file-system/legacy';
 import LiveAudioStream from 'react-native-live-audio-stream';
+import { supabase } from './auth.service';
 
 // Primary: FastAPI backend /ws/live proxy. Fallback: standalone Node proxy.
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? '';
@@ -111,7 +112,8 @@ function log(...args: any[]) {
 export class LiveSession {
   private ws: WebSocket | null = null;
   private cb: LiveCallbacks;
-  private userId: string | null;
+  private accessToken: string | null = null;
+  private proxyAuthenticated = false;
   private micActive = false;
   private pcmChunks: string[] = []; // base64 PCM16 @24k from Gemini (current turn)
   private player: AudioPlayer | null = null;
@@ -129,10 +131,8 @@ export class LiveSession {
   constructor(userIdOrOpts: string | null | LiveSessionOptions, cb: LiveCallbacks) {
     if (userIdOrOpts && typeof userIdOrOpts === 'object') {
       this.opts = userIdOrOpts;
-      this.userId = userIdOrOpts.userId;
     } else {
       this.opts = { userId: userIdOrOpts };
-      this.userId = userIdOrOpts;
     }
     this.cb = cb;
   }
@@ -149,6 +149,23 @@ export class LiveSession {
       this.cb.onStatus?.('error');
       throw new Error('Gemini Live URL not configured');
     }
+
+    // Resolve a current access token before opening the microphone or socket.
+    // The proxy derives identity from this token and ignores client user IDs.
+    const current = await supabase.auth.getSession();
+    if (current.error) throw current.error;
+    let session = current.data.session;
+    const expiresSoon = !session?.expires_at || session.expires_at * 1000 - Date.now() < 60_000;
+    if (expiresSoon) {
+      const refreshed = await supabase.auth.refreshSession();
+      if (refreshed.error) throw refreshed.error;
+      session = refreshed.data.session;
+    }
+    if (!session?.access_token) {
+      this.cb.onStatus?.('error');
+      throw new Error('Sign in is required for Live');
+    }
+    this.accessToken = session.access_token;
 
     // Request microphone permission BEFORE starting capture. Without this the
     // native PCM recorder silently produces no audio on Android.
@@ -217,21 +234,23 @@ export class LiveSession {
   private openSocket() {
     this.cb.onStatus?.('connecting');
     this.setupAttempts = 0;
+    this.proxyAuthenticated = false;
     const base = ENDPOINTS[this.endpointIndex];
-    const url = `${base}?userId=${encodeURIComponent(this.userId ?? '')}`;
-    log('connecting to proxy', url);
-    const ws = new WebSocket(url);
+    log('connecting to proxy');
+    const ws = new WebSocket(base);
     // If a binary frame ever arrives, deliver it as ArrayBuffer (decodable)
     // rather than Blob (unreadable in RN).
     (ws as any).binaryType = 'arraybuffer';
     this.ws = ws;
 
     ws.onopen = () => {
-      log('connected'); // required log: connected
-      this.cb.onStatus?.('connected');
-      // Defer the setup send one tick — sends issued synchronously inside
-      // onopen have been observed to drop on RN Android.
-      setTimeout(() => this.sendSetup(), 50);
+      if (!this.accessToken) {
+        ws.close();
+        return;
+      }
+      // Authentication is always the first frame. Setup waits for the
+      // server's authenticated acknowledgement.
+      ws.send(JSON.stringify({ type: 'auth', accessToken: this.accessToken }));
     };
 
     ws.onmessage = (ev) => this.onMessage(ev.data);
@@ -241,10 +260,12 @@ export class LiveSession {
     ws.onclose = (e: any) => {
       log('proxy WS closed', e?.code ?? '', e?.reason ?? '');
       this.clearSetupTimer();
+      this.proxyAuthenticated = false;
       if (this.closed) return;
       // If we never reached setupComplete on this endpoint, try the next one
       // (backend /ws/live -> standalone Node proxy) before reporting failure.
-      if (!this.setupDone && this.endpointIndex < ENDPOINTS.length - 1) {
+      const nonRetryable = [1009, 4401, 4429].includes(e?.code);
+      if (!nonRetryable && !this.setupDone && this.endpointIndex < ENDPOINTS.length - 1) {
         this.endpointIndex += 1;
         log('falling back to endpoint', ENDPOINTS[this.endpointIndex]);
         this.openSocket();
@@ -255,7 +276,7 @@ export class LiveSession {
   }
 
   private send(obj: any) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+    if (this.proxyAuthenticated && this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(obj));
     }
   }
@@ -289,7 +310,12 @@ export class LiveSession {
     // Proxy status frames
     if (msg.type === 'proxy_status') {
       log('proxy_status:', msg.status, msg.attempt ?? '');
-      if (msg.status === 'connected') this.cb.onStatus?.('connected');
+      if (msg.status === 'authenticated') {
+        this.proxyAuthenticated = true;
+        this.cb.onStatus?.('connected');
+        // Defer setup one tick for React Native Android socket reliability.
+        setTimeout(() => this.sendSetup(), 50);
+      } else if (msg.status === 'connected') this.cb.onStatus?.('connected');
       else if (msg.status === 'reconnecting') this.cb.onStatus?.('reconnecting');
       else if (msg.status === 'rate_limited') this.cb.onStatus?.('rate_limited');
       else if (msg.status === 'error') this.cb.onStatus?.('error');
@@ -332,8 +358,6 @@ export class LiveSession {
       }
     }
     if (audioParts) log('response received —', audioParts, 'audio part(s), buffered:', this.pcmChunks.length);
-    if (inT) log('input transcript:', JSON.stringify(inT).slice(0, 80));
-    if (outT) log('output transcript:', JSON.stringify(outT).slice(0, 80));
 
     if (sc.turnComplete || sc.generationComplete) {
       log('turnComplete — playing', this.pcmChunks.length, 'chunks');
@@ -451,6 +475,8 @@ export class LiveSession {
 
   async close() {
     this.closed = true;
+    this.proxyAuthenticated = false;
+    this.accessToken = null;
     this.clearSetupTimer();
     this.stopMic();
     await this.stopPlayback();
