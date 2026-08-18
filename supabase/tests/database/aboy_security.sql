@@ -241,13 +241,15 @@ SELECT is(auth.jwt() -> 'app_metadata' ->> 'role', 'admin', 'admin workflow uses
 SELECT is((SELECT count(*) FROM user_profiles), 3::bigint, 'admin can review all profiles');
 SELECT is((SELECT count(*) FROM query_audit_log), 2::bigint, 'admin can review all audit records');
 SELECT is((SELECT count(*) FROM role_change_audit), 1::bigint, 'admin can review role-change audit');
+SELECT lives_ok(
+    $$UPDATE user_profiles SET role = 'admin'
+      WHERE id = '22222222-2222-4222-8222-222222222222'$$,
+    'admin client role-update attempt is evaluated by RLS'
+);
 SELECT is(
-    (WITH changed AS (
-        UPDATE user_profiles SET role = 'admin'
-        WHERE id = '22222222-2222-4222-8222-222222222222'
-        RETURNING 1
-    ) SELECT count(*) FROM changed),
-    0::bigint,
+    (SELECT role FROM user_profiles
+     WHERE id = '22222222-2222-4222-8222-222222222222'),
+    'pro_nurse',
     'admin client cannot directly rewrite another profile role'
 );
 RESET ROLE;
