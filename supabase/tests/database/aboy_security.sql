@@ -62,6 +62,21 @@ SELECT is(
     true,
     'service role can execute backend mutation functions'
 );
+SELECT is(
+    has_table_privilege('anon', 'public.user_profiles', 'SELECT'),
+    false,
+    'anonymous role has no private profile table grant'
+);
+SELECT is(
+    has_table_privilege('authenticated', 'public.user_profiles', 'SELECT'),
+    true,
+    'authenticated role has the profile privilege required for RLS evaluation'
+);
+SELECT is(
+    has_table_privilege('service_role', 'public.user_profiles', 'UPDATE'),
+    true,
+    'service role has explicit backend table privileges'
+);
 
 -- Synthetic Auth users cause the production trigger to create profiles.
 INSERT INTO auth.users (
@@ -132,8 +147,14 @@ SELECT set_config('request.jwt.claims', '{"role":"anon"}', true);
 SET LOCAL ROLE anon;
 SELECT is(auth.uid(), NULL::uuid, 'auth.uid() is null for anonymous access');
 SELECT is(auth.jwt() ->> 'role', 'anon', 'auth.jwt() exposes the anonymous role');
-SELECT is((SELECT count(*) FROM user_profiles), 0::bigint, 'anonymous profile access is denied');
-SELECT is((SELECT count(*) FROM query_sessions), 0::bigint, 'anonymous conversation access is denied');
+SELECT throws_ok(
+    $$SELECT count(*) FROM user_profiles$$,
+    '42501', NULL, 'anonymous profile access fails closed at the privilege boundary'
+);
+SELECT throws_ok(
+    $$SELECT count(*) FROM query_sessions$$,
+    '42501', NULL, 'anonymous conversation access fails closed at the privilege boundary'
+);
 SELECT throws_ok(
     $$INSERT INTO query_sessions (user_id, title) VALUES
       ('11111111-1111-4111-8111-111111111111', 'forbidden anonymous session')$$,

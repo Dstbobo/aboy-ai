@@ -106,6 +106,8 @@ def test_privacy_migration_covers_derived_data_and_service_rpcs() -> None:
         assert "ON DELETE CASCADE" in sql
         assert "FROM PUBLIC, anon, authenticated" in sql
         assert "TO service_role" in sql
+        assert "GRANT SELECT, UPDATE ON user_profiles TO authenticated" in sql
+        assert "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO service_role" in sql
 
 
 def test_sensitive_payloads_are_not_written_to_runtime_logs() -> None:

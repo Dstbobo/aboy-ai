@@ -709,6 +709,29 @@ ALTER TABLE image_resolution_stats ENABLE ROW LEVEL SECURITY;
 ALTER TABLE coverage_gaps ENABLE ROW LEVEL SECURITY;
 ALTER TABLE funnel_events ENABLE ROW LEVEL SECURITY;
 
+-- Do not rely on provider-specific default privileges. These grants are the
+-- minimum direct client surface supported by the policies below and by the
+-- owner/admin policies created in the baseline. Anonymous callers receive no
+-- public-table grant; authentication itself is handled by Supabase Auth.
+GRANT USAGE ON SCHEMA public TO authenticated, service_role;
+GRANT SELECT, UPDATE ON user_profiles TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON query_sessions TO authenticated;
+GRANT SELECT ON query_audit_log TO authenticated;
+GRANT SELECT, INSERT ON query_feedback TO authenticated;
+GRANT SELECT ON ai_live_sessions TO authenticated;
+GRANT SELECT ON role_change_requests, role_change_audit TO authenticated;
+GRANT SELECT ON user_token_usage TO authenticated;
+GRANT SELECT ON user_intelligence_profile, user_topic_stats TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON knowledge_sources, knowledge_chunks
+    TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON safety_flags TO authenticated;
+
+-- The backend service role is the only direct writer for operational and
+-- derived tables. RLS bypass alone does not imply SQL object privileges.
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO service_role;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO service_role;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO service_role;
+
 DROP POLICY IF EXISTS "Users read own intelligence profile" ON user_intelligence_profile;
 CREATE POLICY "Users read own intelligence profile"
     ON user_intelligence_profile FOR SELECT TO authenticated
