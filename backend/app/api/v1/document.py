@@ -6,6 +6,7 @@ Mirrors the vision flow but for documents. Scanned/image-only PDFs (no text
 layer) are rejected with a helpful message.
 """
 
+import asyncio
 import io
 import logging
 
@@ -15,6 +16,7 @@ from app.config import get_settings
 from app.core.auth.middleware import get_current_user
 from app.core.llm.client import generate_response
 from app.models.user import AuthenticatedUser
+from app.security.provider_guard import enforce_provider_request
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -75,14 +77,26 @@ async def analyze_document(
             detail="No readable text found — the document may be scanned images rather than text.",
         )
     text = text[:_MAX_CHARS]
+    await enforce_provider_request(
+        user,
+        text_chars=len(prompt) + len(text),
+        request_bytes=len(data),
+    )
 
     user_prompt = f"{prompt}\n\nDocument content:\n{text}"
     try:
-        answer, _, _ = await generate_response(
-            _SYSTEM, user_prompt, model=settings.anthropic_model, max_tokens=2000
+        answer, _, _ = await asyncio.wait_for(
+            generate_response(
+                _SYSTEM, user_prompt, model=settings.anthropic_model, max_tokens=2000
+            ),
+            timeout=settings.provider_timeout_seconds,
         )
-    except Exception as exc:
-        logger.warning("document analysis failed: %s", exc)
-        raise HTTPException(status_code=502, detail="Could not analyze the document. Please try again.")
+    except TimeoutError:
+        raise HTTPException(status_code=504, detail="Document analysis timed out") from None
+    except Exception:
+        logger.warning("document analysis failed")
+        raise HTTPException(
+            status_code=502, detail="Could not analyze the document. Please try again."
+        ) from None
 
     return {"text": answer}

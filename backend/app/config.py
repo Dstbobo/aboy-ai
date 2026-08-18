@@ -82,6 +82,7 @@ class Settings(BaseSettings):
     provider_user_requests_per_minute: int = 20
     provider_global_requests_per_minute: int = 200
     provider_max_text_chars: int = 40_000
+    provider_max_upload_bytes: int = 20 * 1024 * 1024
     provider_timeout_seconds: int = 75
 
     # Gemini Live controls. Authentication must complete before an upstream
@@ -136,6 +137,24 @@ class Settings(BaseSettings):
             raise RuntimeError("LLM_PROVIDER is not supported")
         if not provider_keys[selected]:
             raise RuntimeError(f"The configured {selected} provider is unavailable")
+
+        bounded_controls = {
+            "PROVIDER_USER_REQUESTS_PER_MINUTE": self.provider_user_requests_per_minute,
+            "PROVIDER_GLOBAL_REQUESTS_PER_MINUTE": self.provider_global_requests_per_minute,
+            "PROVIDER_MAX_TEXT_CHARS": self.provider_max_text_chars,
+            "PROVIDER_MAX_UPLOAD_BYTES": self.provider_max_upload_bytes,
+            "PROVIDER_TIMEOUT_SECONDS": self.provider_timeout_seconds,
+            "LIVE_AUTH_TIMEOUT_SECONDS": self.live_auth_timeout_seconds,
+            "LIVE_IDLE_TIMEOUT_SECONDS": self.live_idle_timeout_seconds,
+            "LIVE_MAX_SESSION_SECONDS": self.live_max_session_seconds,
+            "LIVE_SESSIONS_PER_USER_PER_DAY": self.live_sessions_per_user_per_day,
+            "LIVE_GLOBAL_SESSIONS_PER_MINUTE": self.live_global_sessions_per_minute,
+            "LIVE_MAX_CONNECTIONS_PER_USER": self.live_max_connections_per_user,
+            "LIVE_MAX_GLOBAL_CONNECTIONS": self.live_max_global_connections,
+            "LIVE_MAX_MESSAGE_BYTES": self.live_max_message_bytes,
+        }
+        if any(value <= 0 for value in bounded_controls.values()):
+            raise RuntimeError("Provider and Live controls must be positive")
 
 
 @lru_cache

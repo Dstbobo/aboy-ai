@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import json
+import logging
 import time
 import uuid
 
@@ -31,11 +32,13 @@ from app.core.token_budget import LIMIT_MESSAGE, add_usage, is_exhausted
 from app.utils.background import fire_and_forget
 from app.models.query import QueryRequest
 from app.models.user import AuthenticatedUser
+from app.security.provider_guard import enforce_provider_request
 from app.utils.emergency import check_emergency
 from app.utils.rate_limiter import check_rate_limit
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 async def _vector_retrieve(query: str) -> list[dict]:
@@ -173,8 +176,7 @@ async def _event_generator(
     ttft_ms = int(((first_token_at or time.monotonic()) - start) * 1000)
     ip_hash = hashlib.sha256(client_ip.encode()).hexdigest() if client_ip else None
 
-    import logging
-    logging.getLogger(__name__).info(
+    logger.info(
         "STREAM tier=%d model=%s ttft=%dms total=%dms q=%.40s",
         cls.tier, "haiku" if model == haiku else "sonnet", ttft_ms, latency_ms, request.query,
     )
@@ -194,6 +196,28 @@ async def _event_generator(
         fire_and_forget(update_profile_after_query(user.user_id, user.role, session_id, request.query))
 
 
+async def _bounded_event_generator(
+    request: QueryRequest,
+    user: AuthenticatedUser,
+    client_ip: str | None,
+    session_id: str,
+):
+    """Bound the total provider stream and return only safe failure details."""
+    try:
+        async with asyncio.timeout(get_settings().provider_timeout_seconds):
+            async for event in _event_generator(request, user, client_ip, session_id):
+                yield event
+    except TimeoutError:
+        yield f"data: {json.dumps({'type': 'error', 'detail': 'AI request timed out'})}\n\n"
+        yield "data: [DONE]\n\n"
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.warning("stream provider request failed")
+        yield f"data: {json.dumps({'type': 'error', 'detail': 'Could not generate an answer'})}\n\n"
+        yield "data: [DONE]\n\n"
+
+
 @router.post("/query/stream")
 async def query_stream(
     request: Request,
@@ -201,11 +225,13 @@ async def query_stream(
     user: AuthenticatedUser = Depends(get_current_user),
 ) -> StreamingResponse:
     await check_rate_limit(user)
+    text_chars = len(body.query) + sum(len(turn.content) for turn in (body.history or []))
+    await enforce_provider_request(user, text_chars=text_chars)
     session_id = body.session_id or str(uuid.uuid4())
     client_ip = request.client.host if request.client else None
 
     return StreamingResponse(
-        _event_generator(body, user, client_ip, session_id),
+        _bounded_event_generator(body, user, client_ip, session_id),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
     )

@@ -1,9 +1,12 @@
+import asyncio
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 
 from app.config import get_settings
 from app.core.auth.middleware import get_current_user
 from app.core.llm.gemini import analyze_image, transcribe_audio
 from app.models.user import AuthenticatedUser
+from app.security.provider_guard import enforce_provider_request
 
 router = APIRouter()
 
@@ -46,11 +49,16 @@ async def transcribe(
     if len(audio_bytes) > _MAX_BYTES:
         raise HTTPException(status_code=413, detail="Audio too large (max 20 MB).")
 
+    await enforce_provider_request(user, request_bytes=len(audio_bytes))
     mime = _guess_audio_mime(file.filename or "", file.content_type or "")
     try:
-        text = await transcribe_audio(audio_bytes, mime)
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Transcription failed: {exc}") from exc
+        text = await asyncio.wait_for(
+            transcribe_audio(audio_bytes, mime), timeout=settings.provider_timeout_seconds
+        )
+    except TimeoutError:
+        raise HTTPException(status_code=504, detail="Transcription timed out") from None
+    except Exception:
+        raise HTTPException(status_code=502, detail="Transcription failed") from None
 
     return {"text": text}
 
@@ -80,10 +88,17 @@ async def vision(
     if len(image_bytes) > _MAX_BYTES:
         raise HTTPException(status_code=413, detail="Image too large (max 20 MB).")
 
+    await enforce_provider_request(
+        user, text_chars=len(prompt), request_bytes=len(image_bytes)
+    )
     mime = file.content_type or "image/jpeg"
     try:
-        text = await analyze_image(image_bytes, mime, prompt)
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Vision failed: {exc}") from exc
+        text = await asyncio.wait_for(
+            analyze_image(image_bytes, mime, prompt), timeout=settings.provider_timeout_seconds
+        )
+    except TimeoutError:
+        raise HTTPException(status_code=504, detail="Vision analysis timed out") from None
+    except Exception:
+        raise HTTPException(status_code=502, detail="Vision analysis failed") from None
 
     return {"text": text}
