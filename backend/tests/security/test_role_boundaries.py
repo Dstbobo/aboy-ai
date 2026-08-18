@@ -9,7 +9,6 @@ from app.api.v1 import profile
 from app.core.auth.middleware import is_valid_role
 from app.models.user import AuthenticatedUser
 
-
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 

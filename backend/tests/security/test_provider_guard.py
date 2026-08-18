@@ -7,7 +7,6 @@ from fastapi import HTTPException
 from app.models.user import AuthenticatedUser
 from app.security import provider_guard
 
-
 REPO_ROOT = Path(__file__).resolve().parents[3]
 USER = AuthenticatedUser(user_id="user-1", email="u@example.test", role="student_med")
 

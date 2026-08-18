@@ -9,7 +9,6 @@ from app.core.audit import logger as audit_logger
 from app.core.audit.models import AuditEvent
 from app.models.user import AuthenticatedUser
 
-
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 

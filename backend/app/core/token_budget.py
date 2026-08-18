@@ -4,7 +4,7 @@ Designed to flip to monthly later via the platform_settings 'token_limit_mode' f
 """
 import logging
 import time
-from datetime import date, datetime, timezone
+from datetime import date
 
 from app.core.dev_accounts import is_unlimited
 from app.db.supabase import get_db
@@ -64,12 +64,7 @@ async def get_usage(user_id: str) -> dict:
     except Exception:
         raise UsageUnavailableError("Token usage is unavailable") from None
 
-    # Reset boundary: next midnight UTC (daily) / 1st of next month (monthly).
-    now = datetime.now(timezone.utc)
-    if mode == "monthly":
-        resets_at = "the 1st of next month (UTC)"
-    else:
-        resets_at = "midnight UTC"
+    resets_at = "the 1st of next month (UTC)" if mode == "monthly" else "midnight UTC"
     return {
         "used": used,
         "limit": limit,
@@ -96,7 +91,10 @@ async def add_usage(user_id: str, tokens: int) -> None:
     try:
         db = await get_db()
         _, limit = await _get_settings(db)
-        await db.rpc("add_token_usage", {"p_user": user_id, "p_tokens": int(tokens), "p_limit": limit}).execute()
+        await db.rpc(
+            "add_token_usage",
+            {"p_user": user_id, "p_tokens": int(tokens), "p_limit": limit},
+        ).execute()
         _usage_write_blocked_until.pop(user_id, None)
     except Exception:
         _usage_write_blocked_until[user_id] = time.monotonic() + _USAGE_WRITE_COOLDOWN_SECONDS

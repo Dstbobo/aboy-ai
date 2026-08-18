@@ -9,6 +9,7 @@ All best-effort: if Redis is unavailable every helper degrades to a miss /
 no-op so the pipeline still works.
 """
 import asyncio
+import contextlib
 import hashlib
 import json
 import re
@@ -77,10 +78,8 @@ async def cache_set(key: str, value: Any, ttl: int) -> None:
     r = get_redis()
     if r is None:
         return
-    try:
+    with contextlib.suppress(Exception):
         await r.set(key, json.dumps(value), ex=ttl)
-    except Exception:
-        pass
 
 
 # ── Sliding-window rate limit ────────────────────────────────────────────────

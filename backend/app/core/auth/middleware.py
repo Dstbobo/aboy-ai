@@ -61,7 +61,7 @@ async def authenticate_access_token(token: str) -> AuthenticatedUser:
     except HTTPException:
         raise
     except Exception:
-        raise credentials_exception
+        raise credentials_exception from None
 
     user_id: str = user_data.get("id", "")
     if not user_id:

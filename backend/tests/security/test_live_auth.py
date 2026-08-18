@@ -11,7 +11,6 @@ from app.models.user import AuthenticatedUser
 from app.security import live_guard
 from app.security.live_guard import LiveConnectionRegistry
 
-
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 

@@ -2,7 +2,6 @@ import re
 import subprocess
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SENSITIVE_NAME = re.compile(r"(?:KEY|TOKEN|PASSWORD|SECRET)$", re.IGNORECASE)
 PLACEHOLDER_VALUE = re.compile(

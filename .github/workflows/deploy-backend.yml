@@ -1,22 +1,29 @@
-name: Deploy Backend to Railway
+name: Deploy Aboy Backend to Railway (production approval required)
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'backend/**'
   workflow_dispatch:
+    inputs:
+      confirm_production:
+        description: 'Type DEPLOY_ABOY_PRODUCTION after approval'
+        required: true
+        type: string
+
+permissions:
+  contents: read
 
 env:
-  PROJECT_ID: 1b6fa081-85c8-4d73-b0c9-c9488fac29a6
-  ENV_ID: 74fa354a-77ce-4c23-9a50-1a2cd41c40a9
-  SERVICE_ID: 9d7c9935-1da8-4eda-8d72-90ad2d19d297
+  PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
+  ENV_ID: ${{ vars.RAILWAY_ENVIRONMENT_ID }}
+  SERVICE_ID: ${{ vars.RAILWAY_SERVICE_ID }}
+  HEALTH_URL: ${{ vars.RAILWAY_HEALTH_URL }}
   RAILWAY_API: https://backboard.railway.app/graphql/v2
 
 jobs:
   deploy:
     name: Deploy to Railway
+    if: ${{ inputs.confirm_production == 'DEPLOY_ABOY_PRODUCTION' }}
     runs-on: ubuntu-latest
+    environment: production
 
     steps:
       - uses: actions/checkout@v4
@@ -30,15 +37,14 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}" \
             -H "Content-Type: application/json" \
             -d "{\"query\":\"mutation { projectTokenCreate(input: { projectId: \\\"$PROJECT_ID\\\", environmentId: \\\"$ENV_ID\\\", name: \\\"gha-${{ github.run_id }}\\\" }) }\"}")
-          echo "GraphQL response: $RESPONSE"
           # Response shape: {"data":{"projectTokenCreate":"<token>"}}
-          PROJECT_TOKEN=$(echo "$RESPONSE" | grep -o '"projectTokenCreate":"[^"]*"' | cut -d'"' -f4)
+          PROJECT_TOKEN=$(printf '%s' "$RESPONSE" | jq -r '.data.projectTokenCreate // empty')
           if [ -z "$PROJECT_TOKEN" ]; then
-            echo "::error::Could not mint project token. Full response: $RESPONSE"
+            echo "::error::Could not mint Railway project token"
             exit 1
           fi
           echo "::add-mask::$PROJECT_TOKEN"
-          echo "project_token=$PROJECT_TOKEN" >> $GITHUB_OUTPUT
+          echo "project_token=$PROJECT_TOKEN" >> "$GITHUB_OUTPUT"
           echo "✅ Project token minted"
 
       # Step 2: Install Railway CLI and upload backend files.
@@ -63,11 +69,13 @@ jobs:
           echo "Waiting up to 5 minutes for Railway build to complete..."
           for i in $(seq 1 10); do
             sleep 30
-            HEALTH=$(curl -s https://fantastic-possibility-production-f4fa.up.railway.app/health --max-time 10)
-            echo "[$i/10] $HEALTH"
-            if echo "$HEALTH" | grep -q "httpx-v2"; then
-              echo "✅ New code is live!"
-              exit 0
+            echo "[$i/10] health check completed"
+            if HEALTH=$(curl -sS "$HEALTH_URL/health" --max-time 10); then
+              if echo "$HEALTH" | grep -q "httpx-v2"; then
+                echo "✅ New code is live!"
+                exit 0
+              fi
             fi
           done
-          echo "⚠️  Build may still be in progress. Check Railway dashboard."
+          echo "::error::Railway deployment did not become healthy in time"
+          exit 1
