@@ -3,6 +3,17 @@ import { View, Text, StyleSheet, useWindowDimensions } from 'react-native';
 import Markdown from 'react-native-markdown-display';
 import { SvgXml } from 'react-native-svg';
 import { COLORS } from '@/constants/theme';
+import {
+  MAX_TOP_LEVEL_CHILDREN,
+  constrainMarkdown,
+  secureMarkdownIt,
+} from '@/utils/markdownSafety';
+
+// The package implements this prop but its bundled TypeScript declaration
+// omits it. Keep the adapter local until the upstream type catches up.
+const BoundedMarkdown = Markdown as React.ComponentType<
+  React.ComponentProps<typeof Markdown> & { maxTopLevelChildren?: number }
+>;
 
 interface Props {
   content: string;
@@ -38,7 +49,7 @@ function normalizeMarkdown(md: string): string {
 
 export function StreamingText({ content, isStreaming }: Props) {
   const { width } = useWindowDimensions();
-  const segments = splitSvgBlocks(normalizeMarkdown(content));
+  const segments = splitSvgBlocks(constrainMarkdown(normalizeMarkdown(content)));
 
   return (
     <View>
@@ -48,9 +59,15 @@ export function StreamingText({ content, isStreaming }: Props) {
             <SvgXml xml={seg.value} width={width - 32} height={undefined} />
           </View>
         ) : (
-          <Markdown key={i} style={markdownStyles} rules={rules}>
+          <BoundedMarkdown
+            key={i}
+            style={markdownStyles}
+            rules={rules}
+            markdownit={secureMarkdownIt}
+            maxTopLevelChildren={MAX_TOP_LEVEL_CHILDREN}
+          >
             {seg.value}
-          </Markdown>
+          </BoundedMarkdown>
         ),
       )}
       {isStreaming && <View style={styles.cursor} />}

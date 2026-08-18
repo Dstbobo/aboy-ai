@@ -112,7 +112,8 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run type-check
       - run: npm run lint
-      - run: npm audit --omit=dev --audit-level=high
+      - run: npm test
+      - run: node scripts/verifyDependencyRisk.js
 
   live-proxy:
     name: Standalone Live security tests
