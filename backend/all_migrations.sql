@@ -416,6 +416,179 @@ INSERT INTO platform_settings (key, value) VALUES ('daily_token_limit', '10000')
 ON CONFLICT (key) DO NOTHING;
 
 -- ============================================================
+-- 008: Personal learning intelligence
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS user_intelligence_profile (
+    user_id UUID PRIMARY KEY,
+    role TEXT,
+    topics_frequent JSONB NOT NULL DEFAULT '[]'::jsonb,
+    topics_mastered JSONB NOT NULL DEFAULT '[]'::jsonb,
+    topics_struggling JSONB NOT NULL DEFAULT '[]'::jsonb,
+    liked_topics JSONB NOT NULL DEFAULT '[]'::jsonb,
+    disliked_topics JSONB NOT NULL DEFAULT '[]'::jsonb,
+    study_pattern JSONB NOT NULL DEFAULT '{}'::jsonb,
+    peak_active_hour INT,
+    current_streak INT NOT NULL DEFAULT 0,
+    longest_streak INT NOT NULL DEFAULT 0,
+    last_active_at TIMESTAMPTZ,
+    last_topic TEXT,
+    last_topic_at TIMESTAMPTZ,
+    strong_areas JSONB NOT NULL DEFAULT '[]'::jsonb,
+    weak_areas JSONB NOT NULL DEFAULT '[]'::jsonb,
+    total_sessions INT NOT NULL DEFAULT 0,
+    total_queries INT NOT NULL DEFAULT 0,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS user_topic_stats (
+    user_id UUID NOT NULL,
+    topic TEXT NOT NULL,
+    query_count INT NOT NULL DEFAULT 0,
+    followup_count INT NOT NULL DEFAULT 0,
+    liked INT NOT NULL DEFAULT 0,
+    disliked INT NOT NULL DEFAULT 0,
+    last_studied_at TIMESTAMPTZ,
+    PRIMARY KEY (user_id, topic)
+);
+
+CREATE OR REPLACE FUNCTION bump_topic_stat(
+    p_user UUID, p_topic TEXT, p_is_followup BOOLEAN DEFAULT FALSE
+) RETURNS user_topic_stats AS $$
+    INSERT INTO user_topic_stats (user_id, topic, query_count, followup_count, last_studied_at)
+    VALUES (p_user, p_topic, 1, CASE WHEN p_is_followup THEN 1 ELSE 0 END, NOW())
+    ON CONFLICT (user_id, topic) DO UPDATE SET
+        query_count = user_topic_stats.query_count + 1,
+        followup_count = user_topic_stats.followup_count
+            + CASE WHEN p_is_followup THEN 1 ELSE 0 END,
+        last_studied_at = NOW()
+    RETURNING *;
+$$ LANGUAGE sql;
+
+CREATE INDEX IF NOT EXISTS idx_topic_stats_user ON user_topic_stats(user_id);
+
+CREATE OR REPLACE FUNCTION bump_topic_feedback(p_user UUID, p_topic TEXT, p_col TEXT)
+RETURNS void AS $$
+    INSERT INTO user_topic_stats (user_id, topic, liked, disliked)
+    VALUES (
+        p_user,
+        p_topic,
+        CASE WHEN p_col = 'liked' THEN 1 ELSE 0 END,
+        CASE WHEN p_col = 'disliked' THEN 1 ELSE 0 END
+    )
+    ON CONFLICT (user_id, topic) DO UPDATE SET
+        liked = user_topic_stats.liked + CASE WHEN p_col = 'liked' THEN 1 ELSE 0 END,
+        disliked = user_topic_stats.disliked
+            + CASE WHEN p_col = 'disliked' THEN 1 ELSE 0 END;
+$$ LANGUAGE sql;
+
+-- ============================================================
+-- 009-011: Medical image registry and operational counters
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS medical_images (
+    concept TEXT PRIMARY KEY,
+    found BOOLEAN NOT NULL DEFAULT TRUE,
+    url TEXT,
+    title TEXT,
+    source TEXT,
+    page_url TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE medical_images
+    ADD COLUMN IF NOT EXISTS asset_url TEXT,
+    ADD COLUMN IF NOT EXISTS stored_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS stored_by TEXT,
+    ADD COLUMN IF NOT EXISTS license TEXT,
+    ADD COLUMN IF NOT EXISTS attribution TEXT,
+    ADD COLUMN IF NOT EXISTS servable BOOLEAN NOT NULL DEFAULT TRUE;
+
+CREATE INDEX IF NOT EXISTS idx_medical_images_url ON medical_images(url);
+
+CREATE TABLE IF NOT EXISTS image_request_stats (
+    day DATE NOT NULL DEFAULT CURRENT_DATE,
+    concept TEXT NOT NULL DEFAULT '',
+    path TEXT NOT NULL,
+    fallback_reason TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'success',
+    count INT NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, concept, path, fallback_reason, status)
+);
+
+CREATE OR REPLACE FUNCTION bump_image_stat(
+    p_concept TEXT, p_path TEXT, p_reason TEXT, p_status TEXT
+) RETURNS void AS $$
+    INSERT INTO image_request_stats (day, concept, path, fallback_reason, status, count)
+    VALUES (
+        CURRENT_DATE, COALESCE(p_concept, ''), p_path,
+        COALESCE(p_reason, ''), COALESCE(p_status, 'success'), 1
+    )
+    ON CONFLICT (day, concept, path, fallback_reason, status)
+    DO UPDATE SET count = image_request_stats.count + 1;
+$$ LANGUAGE sql;
+
+CREATE TABLE IF NOT EXISTS curate_failures (
+    id BIGSERIAL PRIMARY KEY,
+    concept TEXT,
+    reason TEXT,
+    detail TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS image_resolution_stats (
+    day DATE NOT NULL DEFAULT CURRENT_DATE,
+    concept TEXT NOT NULL,
+    outcome TEXT NOT NULL,
+    count INT NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, concept, outcome)
+);
+
+CREATE OR REPLACE FUNCTION bump_resolution_stat(p_concept TEXT, p_outcome TEXT)
+RETURNS void AS $$
+    INSERT INTO image_resolution_stats (day, concept, outcome, count)
+    VALUES (CURRENT_DATE, COALESCE(p_concept, ''), p_outcome, 1)
+    ON CONFLICT (day, concept, outcome)
+    DO UPDATE SET count = image_resolution_stats.count + 1;
+$$ LANGUAGE sql;
+
+CREATE TABLE IF NOT EXISTS coverage_gaps (
+    query_norm TEXT PRIMARY KEY,
+    sample TEXT,
+    count INT NOT NULL DEFAULT 0,
+    last_seen TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE OR REPLACE FUNCTION bump_coverage_gap(p_norm TEXT, p_sample TEXT)
+RETURNS void AS $$
+    INSERT INTO coverage_gaps (query_norm, sample, count, last_seen)
+    VALUES (p_norm, p_sample, 1, NOW())
+    ON CONFLICT (query_norm)
+    DO UPDATE SET count = coverage_gaps.count + 1, last_seen = NOW();
+$$ LANGUAGE sql;
+
+-- ============================================================
+-- 012: Feedback uniqueness and aggregate activation funnel
+-- ============================================================
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_query_feedback_user_audit
+    ON query_feedback (user_id, audit_log_id);
+
+CREATE TABLE IF NOT EXISTS funnel_events (
+    day DATE NOT NULL DEFAULT CURRENT_DATE,
+    step TEXT NOT NULL,
+    count INT NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, step)
+);
+
+CREATE OR REPLACE FUNCTION bump_funnel_event(p_step TEXT)
+RETURNS void AS $$
+    INSERT INTO funnel_events (day, step, count)
+    VALUES (CURRENT_DATE, p_step, 1)
+    ON CONFLICT (day, step) DO UPDATE SET count = funnel_events.count + 1;
+$$ LANGUAGE sql;
+
+-- ============================================================
 -- 013: Server-controlled roles and backend-only service access
 -- ============================================================
 
@@ -475,3 +648,109 @@ CREATE POLICY "Admins read role change audit"
 
 -- Service-role clients bypass RLS. Ordinary authenticated clients retain only
 -- the explicit owner-read policies defined by earlier migrations.
+
+-- ============================================================
+-- 014: Derived-data RLS and account-deletion cascades
+-- ============================================================
+
+ALTER TABLE user_intelligence_profile
+    DROP CONSTRAINT IF EXISTS user_intelligence_profile_user_id_fkey;
+ALTER TABLE user_intelligence_profile
+    ADD CONSTRAINT user_intelligence_profile_user_id_fkey
+    FOREIGN KEY (user_id) REFERENCES user_profiles(id) ON DELETE CASCADE NOT VALID;
+ALTER TABLE user_topic_stats DROP CONSTRAINT IF EXISTS user_topic_stats_user_id_fkey;
+ALTER TABLE user_topic_stats
+    ADD CONSTRAINT user_topic_stats_user_id_fkey
+    FOREIGN KEY (user_id) REFERENCES user_profiles(id) ON DELETE CASCADE NOT VALID;
+
+ALTER TABLE query_audit_log DROP CONSTRAINT IF EXISTS query_audit_log_user_id_fkey;
+ALTER TABLE query_audit_log
+    ADD CONSTRAINT query_audit_log_user_id_fkey
+    FOREIGN KEY (user_id) REFERENCES user_profiles(id) ON DELETE CASCADE NOT VALID;
+ALTER TABLE query_audit_log DROP CONSTRAINT IF EXISTS query_audit_log_session_id_fkey;
+ALTER TABLE query_audit_log
+    ADD CONSTRAINT query_audit_log_session_id_fkey
+    FOREIGN KEY (session_id) REFERENCES query_sessions(id) ON DELETE CASCADE NOT VALID;
+
+ALTER TABLE query_feedback DROP CONSTRAINT IF EXISTS query_feedback_audit_log_id_fkey;
+ALTER TABLE query_feedback
+    ADD CONSTRAINT query_feedback_audit_log_id_fkey
+    FOREIGN KEY (audit_log_id) REFERENCES query_audit_log(id) ON DELETE CASCADE NOT VALID;
+ALTER TABLE query_feedback DROP CONSTRAINT IF EXISTS query_feedback_user_id_fkey;
+ALTER TABLE query_feedback
+    ADD CONSTRAINT query_feedback_user_id_fkey
+    FOREIGN KEY (user_id) REFERENCES user_profiles(id) ON DELETE CASCADE NOT VALID;
+
+ALTER TABLE ai_live_sessions DROP CONSTRAINT IF EXISTS ai_live_sessions_user_id_fkey;
+ALTER TABLE ai_live_sessions
+    ADD CONSTRAINT ai_live_sessions_user_id_fkey
+    FOREIGN KEY (user_id) REFERENCES user_profiles(id) ON DELETE CASCADE NOT VALID;
+ALTER TABLE role_change_requests DROP CONSTRAINT IF EXISTS role_change_requests_reviewed_by_fkey;
+ALTER TABLE role_change_requests
+    ADD CONSTRAINT role_change_requests_reviewed_by_fkey
+    FOREIGN KEY (reviewed_by) REFERENCES user_profiles(id) ON DELETE SET NULL NOT VALID;
+
+ALTER TABLE role_change_audit ALTER COLUMN actor_user_id DROP NOT NULL;
+ALTER TABLE role_change_audit DROP CONSTRAINT IF EXISTS role_change_audit_actor_user_id_fkey;
+ALTER TABLE role_change_audit
+    ADD CONSTRAINT role_change_audit_actor_user_id_fkey
+    FOREIGN KEY (actor_user_id) REFERENCES user_profiles(id) ON DELETE SET NULL NOT VALID;
+ALTER TABLE role_change_audit DROP CONSTRAINT IF EXISTS role_change_audit_target_user_id_fkey;
+ALTER TABLE role_change_audit
+    ADD CONSTRAINT role_change_audit_target_user_id_fkey
+    FOREIGN KEY (target_user_id) REFERENCES user_profiles(id) ON DELETE CASCADE NOT VALID;
+
+ALTER TABLE user_intelligence_profile ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_topic_stats ENABLE ROW LEVEL SECURITY;
+ALTER TABLE medical_images ENABLE ROW LEVEL SECURITY;
+ALTER TABLE image_request_stats ENABLE ROW LEVEL SECURITY;
+ALTER TABLE curate_failures ENABLE ROW LEVEL SECURITY;
+ALTER TABLE image_resolution_stats ENABLE ROW LEVEL SECURITY;
+ALTER TABLE coverage_gaps ENABLE ROW LEVEL SECURITY;
+ALTER TABLE funnel_events ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users read own intelligence profile" ON user_intelligence_profile;
+CREATE POLICY "Users read own intelligence profile"
+    ON user_intelligence_profile FOR SELECT TO authenticated
+    USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users read own topic stats" ON user_topic_stats;
+CREATE POLICY "Users read own topic stats"
+    ON user_topic_stats FOR SELECT TO authenticated
+    USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users submit own feedback" ON query_feedback;
+CREATE POLICY "Users submit own feedback"
+    ON query_feedback FOR INSERT TO authenticated
+    WITH CHECK (
+        auth.uid() = user_id
+        AND EXISTS (
+            SELECT 1 FROM query_audit_log audit
+            WHERE audit.id = audit_log_id AND audit.user_id = auth.uid()
+        )
+    );
+
+REVOKE ALL ON FUNCTION public.bump_topic_stat(UUID, TEXT, BOOLEAN)
+    FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.bump_topic_feedback(UUID, TEXT, TEXT)
+    FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.bump_image_stat(TEXT, TEXT, TEXT, TEXT)
+    FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.bump_resolution_stat(TEXT, TEXT)
+    FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.bump_coverage_gap(TEXT, TEXT)
+    FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.bump_funnel_event(TEXT)
+    FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.add_token_usage(UUID, INT, INT)
+    FROM PUBLIC, anon, authenticated;
+
+GRANT EXECUTE ON FUNCTION public.bump_topic_stat(UUID, TEXT, BOOLEAN) TO service_role;
+GRANT EXECUTE ON FUNCTION public.bump_topic_feedback(UUID, TEXT, TEXT) TO service_role;
+GRANT EXECUTE ON FUNCTION public.bump_image_stat(TEXT, TEXT, TEXT, TEXT) TO service_role;
+GRANT EXECUTE ON FUNCTION public.bump_resolution_stat(TEXT, TEXT) TO service_role;
+GRANT EXECUTE ON FUNCTION public.bump_coverage_gap(TEXT, TEXT) TO service_role;
+GRANT EXECUTE ON FUNCTION public.bump_funnel_event(TEXT) TO service_role;
+GRANT EXECUTE ON FUNCTION public.add_token_usage(UUID, INT, INT) TO service_role;
+
+ALTER FUNCTION public.handle_new_user() SET search_path = public, auth;
+REVOKE ALL ON FUNCTION public.handle_new_user() FROM PUBLIC, anon, authenticated;

@@ -19,6 +19,12 @@ def test_profile_patch_forbids_server_controlled_fields() -> None:
             profile.ProfileUpdate.model_validate({field: "attacker-controlled"})
 
 
+@pytest.mark.parametrize("attempted_role", ["admin", "pro_nurse", "ops_admin", "edu_lecturer"])
+def test_normal_user_cannot_directly_assign_any_role(attempted_role: str) -> None:
+    with pytest.raises(ValidationError):
+        profile.ProfileUpdate.model_validate({"role": attempted_role})
+
+
 def test_profile_patch_allows_only_profile_content() -> None:
     body = profile.ProfileUpdate(
         full_name="A User",

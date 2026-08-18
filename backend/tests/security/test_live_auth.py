@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from app.api.v1 import live
 from app.core.auth import middleware
 from app.models.user import AuthenticatedUser
+from app.security import live_guard
 from app.security.live_guard import LiveConnectionRegistry
 
 
@@ -111,6 +112,25 @@ async def test_profile_failure_does_not_preserve_admin_claim(monkeypatch) -> Non
     assert user.role == "student_med"
 
 
+@pytest.mark.parametrize("token_label", ["invalid", "expired", "revoked"])
+@pytest.mark.asyncio
+async def test_supabase_rejected_token_is_unauthorized(monkeypatch, token_label) -> None:
+    _AuthClient.response = _AuthResponse(401, {"error": "not exposed to caller"})
+    monkeypatch.setattr(middleware.httpx, "AsyncClient", _AuthClient)
+    monkeypatch.setattr(
+        middleware,
+        "get_settings",
+        lambda: SimpleNamespace(
+            supabase_url="https://project.supabase.co",
+            supabase_anon_key="public-anon-key",
+        ),
+    )
+    with pytest.raises(HTTPException) as error:
+        await middleware.authenticate_access_token(f"{token_label}-access-token")
+    assert error.value.status_code == 401
+    assert error.value.detail == "Invalid or expired token"
+
+
 class _FakeSocket:
     def __init__(self, first_frame: dict):
         self.first_frame = json.dumps(first_frame)
@@ -191,6 +211,22 @@ async def test_connection_registry_enforces_user_and_global_caps() -> None:
     assert await registry.acquire("three", 1, 2)
 
 
+@pytest.mark.asyncio
+async def test_live_quota_denial_rejects_admission(monkeypatch) -> None:
+    async def denied(*_args, **_kwargs):
+        return False, 20
+
+    monkeypatch.setattr(live_guard, "sliding_window_allow", denied)
+    settings = SimpleNamespace(
+        live_sessions_per_user_per_day=20,
+        live_global_sessions_per_minute=60,
+        live_max_connections_per_user=1,
+        live_max_global_connections=20,
+    )
+    with pytest.raises(live_guard.LiveAdmissionError):
+        await live_guard.admit_live_session("verified-user", settings)
+
+
 def test_all_live_clients_use_token_handshake_not_query_identity() -> None:
     mobile = (REPO_ROOT / "mobile/services/geminiLive.ts").read_text(encoding="utf-8")
     node = (REPO_ROOT / "mobile/services/gemini-live-server/server.js").read_text(
@@ -201,3 +237,5 @@ def test_all_live_clients_use_token_handshake_not_query_identity() -> None:
     assert "accessToken: this.accessToken" in mobile
     assert "authenticateAccessToken(auth.accessToken)" in node
     assert "apikey: SUPABASE_ANON_KEY" in node
+    assert "session.userId = user.id" in node
+    assert "user_id: session.userId" in node

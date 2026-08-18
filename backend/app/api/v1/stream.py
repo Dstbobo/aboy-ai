@@ -177,8 +177,8 @@ async def _event_generator(
     ip_hash = hashlib.sha256(client_ip.encode()).hexdigest() if client_ip else None
 
     logger.info(
-        "STREAM tier=%d model=%s ttft=%dms total=%dms q=%.40s",
-        cls.tier, "haiku" if model == haiku else "sonnet", ttft_ms, latency_ms, request.query,
+        "stream tier=%d model=%s ttft=%dms total=%dms",
+        cls.tier, "haiku" if model == haiku else "sonnet", ttft_ms, latency_ms,
     )
 
     fire_and_forget(log_query(AuditEvent(
@@ -227,7 +227,7 @@ async def query_stream(
     await check_rate_limit(user)
     text_chars = len(body.query) + sum(len(turn.content) for turn in (body.history or []))
     await enforce_provider_request(user, text_chars=text_chars)
-    session_id = body.session_id or str(uuid.uuid4())
+    session_id = str(body.session_id) if body.session_id else str(uuid.uuid4())
     client_ip = request.client.host if request.client else None
 
     return StreamingResponse(

@@ -26,6 +26,6 @@ def fire_and_forget(coro: Coroutine) -> None:
         _tasks.discard(t)
         exc = t.exception() if not t.cancelled() else None
         if exc:
-            logger.warning("background task failed: %s", exc)
+            logger.warning("background task failed")
 
     task.add_done_callback(_done)

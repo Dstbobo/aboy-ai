@@ -420,8 +420,8 @@ async def _db_get(concept: str) -> dict | None | bool:
                 "source": row.get("source") or "", "page_url": row.get("page_url") or "",
                 "license": row.get("license") or "", "attribution": row.get("attribution") or "",
             }
-    except Exception as exc:
-        logger.warning("medical_images read failed: %s", exc)
+    except Exception:
+        logger.warning("medical image registry read failed")
     return None
 
 
@@ -433,8 +433,8 @@ async def _db_put(concept: str, image: dict | None) -> None:
             row.update({"url": image["url"], "title": image.get("title"),
                         "source": image.get("source"), "page_url": image.get("page_url")})
         await db.table("medical_images").upsert(row).execute()
-    except Exception as exc:
-        logger.warning("medical_images write failed: %s", exc)
+    except Exception:
+        logger.warning("medical image registry write failed")
 
 
 async def resolve_concept(concept: str, *, allow_live: bool = True) -> dict | None:
@@ -459,13 +459,13 @@ async def resolve_concept(concept: str, *, allow_live: bool = True) -> dict | No
     # L3: live fetch, then persist to DB + Redis so it's reliable from now on.
     try:
         image = await _live_lookup(concept)
-    except Exception as exc:
-        logger.warning("IMAGE live lookup failed for %r: %s", concept, exc)
+    except Exception:
+        logger.warning("medical image live lookup failed")
         return None  # transient — don't persist a miss, allow a retry
     await _db_put(concept, image)
     await cache_set(cache_key, image or {}, _TTL_HIT if image else _TTL_MISS)
     if image:
-        logger.info("IMAGE live->DB %.40s -> %s", concept, image["title"])
+        logger.info("medical image live lookup cached")
     return image
 
 
@@ -645,8 +645,8 @@ async def _tavily_images(client, query: str) -> tuple[list, list]:
             timeout=6.0,
         )
         return resp.get("images") or [], resp.get("results") or []
-    except Exception as exc:
-        logger.warning("web image search failed for %r: %s", query, exc)
+    except Exception:
+        logger.warning("web image search failed")
         return [], []
 
 
@@ -788,8 +788,7 @@ async def find_medical_images(
         # LEARN the best one so it's permanent + instant next time.
         fire_and_forget(_db_put(f"webq:{subject}", chosen[0]))
         fire_and_forget(_log_resolution(subject, True))
-        logger.info("IMAGES subj=%.40s -> %d refs (%s)", subject, len(chosen),
-                    ", ".join(c["source"] for c in chosen))
+        logger.info("medical images selected count=%d", len(chosen))
     else:
         await cache_set(cache_key, [], _TTL_IMGS_MISS)  # short — retry soon
         fire_and_forget(_log_coverage_gap(question))

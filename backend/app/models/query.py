@@ -1,8 +1,13 @@
-from pydantic import BaseModel, Field
+from typing import Literal
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class HistoryTurn(BaseModel):
-    role: str  # "user" | "assistant"
+    model_config = ConfigDict(extra="forbid")
+
+    role: Literal["user", "assistant"]
     # Full answers can exceed 4k chars; a too-tight cap made the *second*
     # question in a chat fail validation (422) → "Sorry, I encountered an
     # error." Generous cap here; the prompt builder trims per-turn anyway.
@@ -10,8 +15,10 @@ class HistoryTurn(BaseModel):
 
 
 class QueryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     query: str = Field(..., min_length=1, max_length=2000)
-    session_id: str | None = None
+    session_id: UUID | None = None
     # Recent conversation turns (text AND voice share one thread) so the
     # model remembers the ongoing discussion.
     history: list[HistoryTurn] | None = Field(default=None, max_length=12)

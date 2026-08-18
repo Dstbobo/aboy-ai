@@ -1,9 +1,12 @@
+from typing import Literal
+
 import httpx
-from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.config import get_settings
 from app.core.auth.middleware import get_current_user
+from app.core.auth.permissions import require_admin
 from app.db.supabase import get_db
 from app.models.user import AuthenticatedUser
 from app.utils.background import fire_and_forget
@@ -12,25 +15,30 @@ router = APIRouter()
 
 
 class FeedbackCreate(BaseModel):
-    audit_log_id: str
-    rating: int | None = None
-    accuracy_rating: int | None = None
-    feedback_text: str | None = None
-    feedback_tags: list[str] = []
+    model_config = ConfigDict(extra="forbid")
+
+    audit_log_id: str = Field(min_length=1, max_length=64)
+    rating: int | None = Field(default=None, ge=1, le=5)
+    accuracy_rating: int | None = Field(default=None, ge=1, le=5)
+    feedback_text: str | None = Field(default=None, max_length=1000)
+    feedback_tags: list[str] = Field(default_factory=list, max_length=10)
 
 
 class RateBody(BaseModel):
-    rating: str                       # 'up' | 'down'
-    audit_id: str | None = None       # preferred: the exact answer (from meta event)
-    session_id: str | None = None     # fallback: latest answer in the session
-    comment: str | None = None        # optional "what went wrong?" on a dislike
+    model_config = ConfigDict(extra="forbid")
+
+    rating: Literal["up", "down"]
+    audit_id: str | None = Field(default=None, max_length=64)
+    session_id: str | None = Field(default=None, max_length=64)
+    comment: str | None = Field(default=None, max_length=1000)
 
 
 async def _notify_discord(audit_id: str, model: str, comment: str) -> None:
     """Alert on actionable dislikes (those with a comment). No question/answer
     content is sent — only the user's note + a reference id to look up safely."""
-    url = get_settings().discord_feedback_webhook
-    if not url:
+    settings = get_settings()
+    url = settings.discord_feedback_webhook
+    if not settings.discord_feedback_enabled or not url:
         return
     try:
         msg = (
@@ -46,20 +54,22 @@ async def _notify_discord(audit_id: str, model: str, comment: str) -> None:
 
 
 class AppFeedback(BaseModel):
-    message: str
-    category: str = "general"   # 'bug' | 'idea' | 'general'
+    model_config = ConfigDict(extra="forbid")
+
+    message: str = Field(min_length=1, max_length=1500)
+    category: Literal["bug", "idea", "general"] = "general"
 
 
-async def _notify_app_feedback(who: str, category: str, message: str) -> None:
+async def _notify_app_feedback(category: str, message: str) -> None:
     """Send a tester's free-text feedback straight to the Discord webhook so the
     founder sees it instantly."""
-    url = get_settings().discord_feedback_webhook
-    if not url:
+    settings = get_settings()
+    url = settings.discord_feedback_webhook
+    if not settings.discord_feedback_enabled or not url:
         return
     try:
         msg = (
             f":speech_balloon: **Tester feedback** ({category})\n"
-            f"• from: `{who}`\n"
             f"• {message[:1500]}"
         )
         async with httpx.AsyncClient(timeout=8) as c:
@@ -75,8 +85,7 @@ async def app_feedback(
 ) -> dict:
     """General in-app feedback (not tied to a specific answer). Pings Discord and
     best-effort stores in `app_feedback` if that table exists."""
-    who = getattr(user, "email", None) or user.user_id
-    fire_and_forget(_notify_app_feedback(who, body.category, body.message))
+    fire_and_forget(_notify_app_feedback(body.category, body.message))
     try:
         db = await get_db()
         await db.table("app_feedback").insert({
@@ -87,17 +96,12 @@ async def app_feedback(
     return {"status": "submitted"}
 
 
-# Founder accounts allowed to read all tester feedback in-app.
-_FOUNDER_EMAILS = {"dstgloballivefarm@gmail.com", "daniel11dst@gmail.com"}
-
-
 @router.get("/feedback/app/list")
 async def list_app_feedback(
     user: AuthenticatedUser = Depends(get_current_user),
 ) -> list[dict]:
-    """Recent in-app feedback — readable by the founder account(s) only."""
-    if (getattr(user, "email", "") or "").lower() not in _FOUNDER_EMAILS:
-        raise HTTPException(status_code=403, detail="Not allowed")
+    """Recent in-app feedback — readable through the audited admin role only."""
+    require_admin(user)
     db = await get_db()
     res = (
         await db.table("app_feedback")
@@ -118,10 +122,12 @@ async def rate(body: RateBody, user: AuthenticatedUser = Depends(get_current_use
     query_raw, model = "", ""
     if audit_id:
         res = await db.table("query_audit_log").select("query_raw, model_used") \
-            .eq("id", audit_id).limit(1).execute()
+            .eq("id", audit_id).eq("user_id", user.user_id).limit(1).execute()
         if res.data:
             query_raw = res.data[0].get("query_raw") or ""
             model = res.data[0].get("model_used") or ""
+        else:
+            raise HTTPException(status_code=404, detail="Answer not found")
     else:
         # Fallback: most recent answer in the session.
         res = (
@@ -170,6 +176,16 @@ async def submit_feedback(
     user: AuthenticatedUser = Depends(get_current_user),
 ) -> dict:
     db = await get_db()
+    owned = (
+        await db.table("query_audit_log")
+        .select("id")
+        .eq("id", body.audit_log_id)
+        .eq("user_id", user.user_id)
+        .limit(1)
+        .execute()
+    )
+    if not owned.data:
+        raise HTTPException(status_code=404, detail="Answer not found")
     await db.table("query_feedback").upsert({
         "audit_log_id": body.audit_log_id,
         "user_id": user.user_id,

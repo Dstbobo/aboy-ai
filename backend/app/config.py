@@ -54,6 +54,7 @@ class Settings(BaseSettings):
 
     # Optional Discord webhook for actionable dislike-with-comment alerts.
     discord_feedback_webhook: str = ""
+    discord_feedback_enabled: bool = False
 
     # RAG config
     # Voyage query/document cosine scores for relevant chunks land ~0.5-0.65,

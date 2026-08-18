@@ -26,7 +26,7 @@ async def query(
     text_chars = len(body.query) + sum(len(turn.content) for turn in (body.history or []))
     await enforce_provider_request(user, text_chars=text_chars)
 
-    session_id = body.session_id or str(uuid.uuid4())
+    session_id = str(body.session_id) if body.session_id else str(uuid.uuid4())
     client_ip = request.client.host if request.client else None
 
     try:

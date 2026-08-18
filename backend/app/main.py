@@ -42,7 +42,7 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-        logger.error("Unhandled exception while handling %s", request.url.path, exc_info=True)
+        logger.error("unhandled request failure path=%s", request.url.path)
         return JSONResponse(
             status_code=500,
             content={"detail": "Internal server error"},
@@ -129,7 +129,7 @@ def create_app() -> FastAPI:
             await conn.execute(sql)
         except Exception:
             await conn.close()
-            logger.exception("Migration execution failed")
+            logger.error("migration execution failed")
             raise HTTPException(status_code=500, detail="Migration failed") from None
 
         # Verify tables
