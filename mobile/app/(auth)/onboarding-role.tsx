@@ -32,7 +32,7 @@ export default function OnboardingRoleScreen() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const router = useRouter();
-  const { updateRoleInfo, completeOnboarding } = useAuthStore();
+  const { completeOnboarding } = useAuthStore();
 
   async function handleContinue() {
     if (!selected) return;
@@ -41,14 +41,14 @@ export default function OnboardingRoleScreen() {
       router.push({ pathname: '/(auth)/onboarding-specialty', params: { role: selected } });
       return;
     }
-    // No specialties for this role — save role, then collect role-specific details.
+    // Roles are server-controlled. Record the selection for admin review, then
+    // collect the matching profile details without treating it as authoritative.
     setSaving(true);
     try {
-      await api.patch('/api/v1/profile', { role: selected });
+      await api.post('/api/v1/profile/role-change', { to_role: selected });
     } catch {
-      // non-fatal — local state still updates
+      // Non-fatal during onboarding; the account retains its server-side role.
     }
-    await updateRoleInfo(selected, '');
     setSaving(false);
     router.push({ pathname: '/(auth)/onboarding-details', params: { role: selected } });
   }
@@ -57,12 +57,6 @@ export default function OnboardingRoleScreen() {
   // set their role later in Settings; nothing is ever gated by role.
   async function handleSkip() {
     setSaving(true);
-    try {
-      await api.patch('/api/v1/profile', { role: 'student_med' });
-    } catch {
-      // non-fatal
-    }
-    await updateRoleInfo('student_med', '');
     await completeOnboarding();
     setSaving(false);
     router.replace('/(clinical)/chat');

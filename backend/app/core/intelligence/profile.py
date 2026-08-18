@@ -38,8 +38,8 @@ async def get_raw_profile(user_id: str) -> dict | None:
     try:
         res = await db.table("user_intelligence_profile").select("*").eq("user_id", user_id).maybe_single().execute()
         return res.data if res else None
-    except Exception as exc:
-        logger.warning("profile read failed: %s", exc)
+    except Exception:
+        logger.warning("profile read failed")
         return None
 
 
@@ -75,6 +75,7 @@ async def update_profile_after_query(user_id: str, role: str, session_id: str, q
         prev_topics: list[str] = []
         try:
             prev = await db.table("query_audit_log").select("query_raw").eq("session_id", session_id) \
+                .eq("user_id", user_id) \
                 .order("created_at", desc=True).limit(3).execute()
             for r in (prev.data or []):
                 # Skip the current query (its audit row may already be written).
@@ -94,8 +95,8 @@ async def update_profile_after_query(user_id: str, role: str, session_id: str, q
         for topic in topics_to_bump:
             try:
                 await db.rpc("bump_topic_stat", {"p_user": user_id, "p_topic": topic, "p_is_followup": followup}).execute()
-            except Exception as exc:
-                logger.warning("bump_topic_stat failed: %s", exc)
+            except Exception:
+                logger.warning("topic statistic update failed")
 
         # Existing profile → streak / session / histogram maths.
         existing = await get_raw_profile(user_id)
@@ -152,8 +153,8 @@ async def update_profile_after_query(user_id: str, role: str, session_id: str, q
             **derived,
         }
         await db.table("user_intelligence_profile").upsert(row).execute()
-    except Exception as exc:  # never break a response
-        logger.warning("update_profile_after_query failed: %s", exc)
+    except Exception:  # never break a response
+        logger.warning("learning profile update failed")
 
 
 def personalization_snippet(profile: dict | None) -> str:

@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from fastapi import APIRouter, Depends
 
 from app.core.auth.middleware import get_current_user
@@ -9,7 +9,9 @@ router = APIRouter()
 
 
 class PushTokenRegister(BaseModel):
-    token: str
+    model_config = ConfigDict(extra="forbid")
+
+    token: str = Field(min_length=16, max_length=4096)
 
 
 @router.post("/notifications/register")

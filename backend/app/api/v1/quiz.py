@@ -6,24 +6,28 @@ explanation). No retrieval — this is generated assessment, kept factual by the
 system prompt; the app grades locally from `correct`.
 """
 
+import asyncio
 import json
 import logging
 import re
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.config import get_settings
 from app.core.auth.middleware import get_current_user
 from app.core.llm.client import generate_response
 from app.models.user import AuthenticatedUser
+from app.security.provider_guard import enforce_provider_request
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
 class QuizRequest(BaseModel):
-    topic: str = ""
+    model_config = ConfigDict(extra="forbid")
+
+    topic: str = Field(default="", max_length=500)
     count: int = Field(default=5, ge=1, le=10)
 
 
@@ -91,15 +95,21 @@ async def make_quiz(
     user: AuthenticatedUser = Depends(get_current_user),
 ) -> QuizResponse:
     settings = get_settings()
+    await enforce_provider_request(user, text_chars=len(body.topic))
     prompt = _build_prompt(body.topic, body.count)
     try:
-        raw, _, _ = await generate_response(
-            _SYSTEM, prompt, model=settings.anthropic_model, max_tokens=2000
+        raw, _, _ = await asyncio.wait_for(
+            generate_response(_SYSTEM, prompt, model=settings.anthropic_model, max_tokens=2000),
+            timeout=settings.provider_timeout_seconds,
         )
         questions = _parse(raw)
-    except Exception as exc:
-        logger.warning("quiz generation failed: %s", exc)
-        raise HTTPException(status_code=502, detail="Could not generate a quiz. Please try again.")
+    except TimeoutError:
+        raise HTTPException(status_code=504, detail="Quiz generation timed out") from None
+    except Exception:
+        logger.warning("quiz generation failed")
+        raise HTTPException(
+            status_code=502, detail="Could not generate a quiz. Please try again."
+        ) from None
     if not questions:
         raise HTTPException(status_code=502, detail="Could not generate a quiz. Please try again.")
     return QuizResponse(topic=body.topic.strip(), questions=questions)

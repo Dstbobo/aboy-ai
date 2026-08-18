@@ -88,7 +88,7 @@ async def run_rag_pipeline(
         cached = await cache_get(resp_key)
         if cached:
             latency_ms = int((time.monotonic() - start) * 1000)
-            logger.info("tier=%d CACHE_HIT latency=%dms q=%.40s", cls.tier, latency_ms, request.query)
+            logger.info("tier=%d cache_hit latency=%dms", cls.tier, latency_ms)
             return QueryResponse(
                 answer=cached["answer"],
                 citations=[CitationModel(**c) for c in cached["citations"]],
@@ -154,9 +154,9 @@ async def run_rag_pipeline(
     ip_hash = hashlib.sha256(client_ip.encode()).hexdigest() if client_ip else None
 
     logger.info(
-        "tier=%d model=%s vec=%d web=%d latency=%dms q=%.40s",
+        "tier=%d model=%s vec=%d web=%d latency=%dms",
         cls.tier, "haiku" if model == haiku else "sonnet",
-        len(reranked), len(web_results), latency_ms, request.query,
+        len(reranked), len(web_results), latency_ms,
     )
 
     # Populate response cache (fresh questions only).

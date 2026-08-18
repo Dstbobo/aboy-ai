@@ -5,15 +5,22 @@ Mark with @pytest.mark.integration to skip in CI without keys.
 """
 
 import pytest
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
+
+from app.core.auth.middleware import get_current_user
 from app.main import app
+from app.models.user import AuthenticatedUser
+
+
+def client() -> AsyncClient:
+    return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
 
 @pytest.mark.asyncio
 @pytest.mark.integration
 async def test_health_endpoint():
-    async with AsyncClient(app=app, base_url="http://test") as client:
-        response = await client.get("/health")
+    async with client() as api:
+        response = await api.get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
 
@@ -21,18 +28,20 @@ async def test_health_endpoint():
 @pytest.mark.asyncio
 @pytest.mark.integration
 async def test_query_requires_auth():
-    async with AsyncClient(app=app, base_url="http://test") as client:
-        response = await client.post("/api/v1/query", json={"query": "What is metformin?"})
-    assert response.status_code == 403
+    async with client() as api:
+        response = await api.post("/api/v1/query", json={"query": "What is metformin?"})
+    assert response.status_code == 401
 
 
 @pytest.mark.asyncio
 @pytest.mark.integration
 async def test_query_rejects_empty():
-    async with AsyncClient(app=app, base_url="http://test") as client:
-        response = await client.post(
-            "/api/v1/query",
-            json={"query": ""},
-            headers={"Authorization": "Bearer fake-token"},
-        )
-    assert response.status_code in (401, 422)
+    app.dependency_overrides[get_current_user] = lambda: AuthenticatedUser(
+        user_id="test-user", email="test@example.test", role="student_med"
+    )
+    try:
+        async with client() as api:
+            response = await api.post("/api/v1/query", json={"query": ""})
+        assert response.status_code == 422
+    finally:
+        app.dependency_overrides.clear()
