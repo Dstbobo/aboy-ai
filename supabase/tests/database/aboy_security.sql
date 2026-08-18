@@ -31,21 +31,27 @@ SELECT is(
         'ai_live_sessions_user_id_fkey',
         'role_change_requests_reviewed_by_fkey',
         'role_change_audit_actor_user_id_fkey',
-        'role_change_audit_target_user_id_fkey'
+        'role_change_audit_target_user_id_fkey',
+        'knowledge_sources_added_by_fkey',
+        'safety_flags_audit_log_id_fkey',
+        'safety_flags_user_id_fkey',
+        'safety_flags_resolved_by_fkey'
      ) AND convalidated),
-    10::bigint,
+    14::bigint,
     'all migration 014 foreign keys are validated'
 );
 SELECT is(
     (SELECT count(*) FROM pg_class
      WHERE relname IN (
-        'user_profiles', 'query_sessions', 'query_audit_log', 'query_feedback',
-        'role_change_requests', 'role_change_audit', 'user_intelligence_profile',
-        'user_topic_stats', 'medical_images', 'image_request_stats',
-        'curate_failures', 'image_resolution_stats', 'coverage_gaps', 'funnel_events'
+        'user_profiles', 'knowledge_sources', 'knowledge_chunks', 'query_sessions',
+        'query_audit_log', 'safety_flags', 'rate_limit_counters', 'query_feedback',
+        'ai_live_sessions', 'role_change_requests', 'user_token_usage',
+        'role_change_audit', 'user_intelligence_profile', 'user_topic_stats',
+        'medical_images', 'image_request_stats', 'curate_failures',
+        'image_resolution_stats', 'coverage_gaps', 'funnel_events', 'platform_settings'
      ) AND relrowsecurity),
-    14::bigint,
-    'RLS is enabled on identity, ownership, and derived-data tables'
+    21::bigint,
+    'RLS is enabled on every identity, ownership, settings, and derived-data table'
 );
 SELECT is(
     has_function_privilege('anon', 'public.bump_topic_stat(uuid,text,boolean)', 'EXECUTE'),
@@ -138,6 +144,21 @@ INSERT INTO role_change_audit (
     'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     '22222222-2222-4222-8222-222222222222',
     'pro_nurse', 'pro_senior', 'approved'
+);
+INSERT INTO knowledge_sources (id, name, source_type, added_by)
+VALUES (
+    'aaaaaaaa-0000-4000-8000-000000000055',
+    'Synthetic reviewed source', 'custom',
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+);
+INSERT INTO safety_flags (
+    id, audit_log_id, user_id, flag_type, flag_source, resolved_by
+) VALUES (
+    '11111111-0000-4000-8000-000000000066',
+    '11111111-0000-4000-8000-000000000011',
+    '11111111-1111-4111-8111-111111111111',
+    'quality_concern', 'automatic',
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 );
 
 -- Anonymous callers see no private records and cannot create ownership data.
@@ -306,6 +327,18 @@ SELECT is(
     NULL::uuid,
     'deleted audit actor is set null'
 );
+SELECT is(
+    (SELECT added_by FROM knowledge_sources
+     WHERE id = 'aaaaaaaa-0000-4000-8000-000000000055'),
+    NULL::uuid,
+    'deleted knowledge-source owner is set null'
+);
+SELECT is(
+    (SELECT resolved_by FROM safety_flags
+     WHERE id = '11111111-0000-4000-8000-000000000066'),
+    NULL::uuid,
+    'deleted safety reviewer is set null'
+);
 
 SELECT lives_ok(
     $$DELETE FROM auth.users
@@ -321,10 +354,21 @@ SELECT is((SELECT count(*) FROM user_topic_stats WHERE user_id = '11111111-1111-
 SELECT is((SELECT count(*) FROM ai_live_sessions WHERE user_id = '11111111-1111-4111-8111-111111111111'), 0::bigint, 'Live records cascaded');
 SELECT is((SELECT count(*) FROM user_token_usage WHERE user_id = '11111111-1111-4111-8111-111111111111'), 0::bigint, 'token usage cascaded');
 SELECT is((SELECT count(*) FROM rate_limit_counters WHERE user_id = '11111111-1111-4111-8111-111111111111'), 0::bigint, 'rate limits cascaded');
+SELECT is((SELECT count(*) FROM safety_flags WHERE user_id = '11111111-1111-4111-8111-111111111111'), 0::bigint, 'safety flags cascaded');
 SELECT throws_ok(
     $$INSERT INTO user_topic_stats (user_id, topic)
       VALUES ('99999999-9999-4999-8999-999999999999', 'orphan')$$,
     '23503', NULL, 'validated constraints reject new orphaned records'
+);
+SELECT throws_ok(
+    $$INSERT INTO safety_flags (
+        audit_log_id, user_id, flag_type, flag_source
+      ) VALUES (
+        '22222222-0000-4000-8000-000000000022',
+        '99999999-9999-4999-8999-999999999999',
+        'quality_concern', 'automatic'
+      )$$,
+    '23503', NULL, 'validated safety constraints reject orphaned user ownership'
 );
 
 SELECT * FROM finish();

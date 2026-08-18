@@ -700,6 +700,24 @@ ALTER TABLE role_change_audit
     ADD CONSTRAINT role_change_audit_target_user_id_fkey
     FOREIGN KEY (target_user_id) REFERENCES user_profiles(id) ON DELETE CASCADE NOT VALID;
 
+ALTER TABLE knowledge_sources DROP CONSTRAINT IF EXISTS knowledge_sources_added_by_fkey;
+ALTER TABLE knowledge_sources
+    ADD CONSTRAINT knowledge_sources_added_by_fkey
+    FOREIGN KEY (added_by) REFERENCES user_profiles(id) ON DELETE SET NULL NOT VALID;
+
+ALTER TABLE safety_flags DROP CONSTRAINT IF EXISTS safety_flags_audit_log_id_fkey;
+ALTER TABLE safety_flags
+    ADD CONSTRAINT safety_flags_audit_log_id_fkey
+    FOREIGN KEY (audit_log_id) REFERENCES query_audit_log(id) ON DELETE CASCADE NOT VALID;
+ALTER TABLE safety_flags DROP CONSTRAINT IF EXISTS safety_flags_user_id_fkey;
+ALTER TABLE safety_flags
+    ADD CONSTRAINT safety_flags_user_id_fkey
+    FOREIGN KEY (user_id) REFERENCES user_profiles(id) ON DELETE CASCADE NOT VALID;
+ALTER TABLE safety_flags DROP CONSTRAINT IF EXISTS safety_flags_resolved_by_fkey;
+ALTER TABLE safety_flags
+    ADD CONSTRAINT safety_flags_resolved_by_fkey
+    FOREIGN KEY (resolved_by) REFERENCES user_profiles(id) ON DELETE SET NULL NOT VALID;
+
 ALTER TABLE user_intelligence_profile ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_topic_stats ENABLE ROW LEVEL SECURITY;
 ALTER TABLE medical_images ENABLE ROW LEVEL SECURITY;
@@ -708,6 +726,7 @@ ALTER TABLE curate_failures ENABLE ROW LEVEL SECURITY;
 ALTER TABLE image_resolution_stats ENABLE ROW LEVEL SECURITY;
 ALTER TABLE coverage_gaps ENABLE ROW LEVEL SECURITY;
 ALTER TABLE funnel_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE platform_settings ENABLE ROW LEVEL SECURITY;
 
 -- Do not rely on provider-specific default privileges. These grants are the
 -- minimum direct client surface supported by the policies below and by the

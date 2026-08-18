@@ -103,7 +103,11 @@ def test_privacy_migration_covers_derived_data_and_service_rpcs() -> None:
         ):
             assert f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY" in sql
         assert "ai_live_sessions_user_id_fkey" in sql
+        assert "safety_flags_user_id_fkey" in sql
+        assert "knowledge_sources_added_by_fkey" in sql
         assert "ON DELETE CASCADE" in sql
+        assert "ON DELETE SET NULL" in sql
+        assert "ALTER TABLE platform_settings ENABLE ROW LEVEL SECURITY" in sql
         assert "FROM PUBLIC, anon, authenticated" in sql
         assert "TO service_role" in sql
         assert "GRANT SELECT, UPDATE ON user_profiles TO authenticated" in sql

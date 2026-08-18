@@ -55,6 +55,14 @@ ALTER TABLE public.role_change_audit
     VALIDATE CONSTRAINT role_change_audit_actor_user_id_fkey;
 ALTER TABLE public.role_change_audit
     VALIDATE CONSTRAINT role_change_audit_target_user_id_fkey;
+ALTER TABLE public.knowledge_sources
+    VALIDATE CONSTRAINT knowledge_sources_added_by_fkey;
+ALTER TABLE public.safety_flags
+    VALIDATE CONSTRAINT safety_flags_audit_log_id_fkey;
+ALTER TABLE public.safety_flags
+    VALIDATE CONSTRAINT safety_flags_user_id_fkey;
+ALTER TABLE public.safety_flags
+    VALIDATE CONSTRAINT safety_flags_resolved_by_fkey;
 
 DO $$
 DECLARE
@@ -73,7 +81,11 @@ BEGIN
         'ai_live_sessions_user_id_fkey',
         'role_change_requests_reviewed_by_fkey',
         'role_change_audit_actor_user_id_fkey',
-        'role_change_audit_target_user_id_fkey'
+        'role_change_audit_target_user_id_fkey',
+        'knowledge_sources_added_by_fkey',
+        'safety_flags_audit_log_id_fkey',
+        'safety_flags_user_id_fkey',
+        'safety_flags_resolved_by_fkey'
     ) AND NOT convalidated;
 
     IF unvalidated_count <> 0 THEN
