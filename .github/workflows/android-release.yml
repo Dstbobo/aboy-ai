@@ -1,0 +1,68 @@
+name: Release Aboy AI to Google Play (internal testing)
+
+# Started by Raven only after Daniel approves a release in its Control Center
+# (raven-os backend/tools/releases.py). Builds the store app bundle on Expo's
+# servers from main and hands it to the Google Play *internal testing* track.
+# Moving a release to production stays Daniel's own step in Play Console.
+#
+# Needs, once: the EXPO_TOKEN repository secret, and the Google Play service
+# account key uploaded to the Expo project's credentials (so no key file ever
+# lives in this repository or this workflow). Version codes are kept by Expo
+# (eas.json appVersionSource "remote"), so every release gets a new one.
+
+on:
+  workflow_dispatch:
+    inputs:
+      notes:
+        description: What this release is for
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and send to internal testing
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Check the Expo token is set
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::The EXPO_TOKEN secret is not set on this repository."
+            exit 1
+          fi
+
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - run: npm ci
+
+      # --wait keeps this run open until the build is done, so its result is the
+      # build's result — what Raven reads to tell Daniel how the release went.
+      - name: Build on Expo and send to Google Play internal testing
+        env:
+          NOTES: ${{ inputs.notes }}
+        run: >-
+          eas build --platform android --profile mvpstore --non-interactive
+          --wait --auto-submit-with-profile production ${NOTES:+--message "$NOTES"}
