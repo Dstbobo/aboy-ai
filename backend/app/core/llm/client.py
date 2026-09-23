@@ -3,7 +3,6 @@ from functools import lru_cache
 
 import anthropic
 import httpx
-from groq import AsyncGroq
 
 from app.config import get_settings
 
@@ -22,7 +21,9 @@ def _get_anthropic_client() -> anthropic.AsyncAnthropic:
 
 
 @lru_cache
-def _get_groq_client() -> AsyncGroq:
+def _get_groq_client():
+    from groq import AsyncGroq
+
     return AsyncGroq(api_key=get_settings().groq_api_key, timeout=120.0)
 
 
@@ -178,8 +179,8 @@ async def stream_response(
             "messages": _openai_messages(system_prompt, user_prompt),
         }) as resp:
             if resp.status_code != 200:
-                body = (await resp.aread()).decode("utf-8", errors="replace")[:300]
-                raise RuntimeError(f"OpenRouter stream error {resp.status_code}: {body}")
+                await resp.aread()
+                raise RuntimeError(f"OpenRouter stream failed with status {resp.status_code}")
             async for line in resp.aiter_lines():
                 if not line.startswith("data: "):
                     continue
@@ -191,7 +192,7 @@ async def stream_response(
                 except Exception:
                     continue
                 if data.get("error"):
-                    raise RuntimeError(f"OpenRouter error: {json.dumps(data['error'])[:400]}")
+                    raise RuntimeError("OpenRouter stream returned an error")
                 choices = data.get("choices", [])
                 if choices:
                     delta = choices[0].get("delta", {}) or {}
@@ -212,8 +213,8 @@ async def stream_response(
             json=_gemini_payload(system_prompt, user_prompt, max_toks),
         ) as resp:
             if resp.status_code != 200:
-                body = (await resp.aread()).decode("utf-8", errors="replace")[:300]
-                raise RuntimeError(f"Gemini stream error {resp.status_code}: {body}")
+                await resp.aread()
+                raise RuntimeError(f"Gemini stream failed with status {resp.status_code}")
             async for line in resp.aiter_lines():
                 if not line.startswith("data: "):
                     continue

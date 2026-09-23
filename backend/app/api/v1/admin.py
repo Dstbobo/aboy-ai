@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
-from app.core.auth.middleware import get_current_user
+from app.core.auth.middleware import get_current_user, is_valid_role
 from app.core.auth.permissions import require_admin
 from app.db.supabase import get_db
 from app.models.user import AuthenticatedUser
@@ -135,6 +135,18 @@ async def update_user_role(
     user: AuthenticatedUser = Depends(get_current_user),
 ) -> dict:
     require_admin(user)
+    if not is_valid_role(role):
+        raise HTTPException(status_code=400, detail="Invalid role")
     db = await get_db()
-    await db.table("user_profiles").update({"role": role}).eq("user_id", user_id).execute()
+    current = await db.table("user_profiles").select("role").eq("id", user_id).maybe_single().execute()
+    if not current or not current.data:
+        raise HTTPException(status_code=404, detail="User not found")
+    await db.table("user_profiles").update({"role": role, "updated_at": "now()"}).eq("id", user_id).execute()
+    await db.table("role_change_audit").insert({
+        "actor_user_id": user.user_id,
+        "target_user_id": user_id,
+        "from_role": current.data.get("role") or "unknown",
+        "to_role": role,
+        "outcome": "admin_updated",
+    }).execute()
     return {"status": "updated"}

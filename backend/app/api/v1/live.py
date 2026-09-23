@@ -1,17 +1,17 @@
-"""
-Gemini Live WebSocket proxy — /ws/live
+"""Authenticated, bounded Gemini Live WebSocket proxy."""
 
-Bridges the mobile app and the Gemini Live API (BidiGenerateContent) so the
-API key never ships in the app. Mirrors the Node proxy (aboy-live) but runs
-inside the main FastAPI backend.
-"""
 import asyncio
+import contextlib
+import json
 import logging
+import time
 
 import websockets
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
 from app.config import get_settings
+from app.core.auth.middleware import authenticate_access_token
+from app.security.live_guard import LiveAdmissionError, admit_live_session, live_connections
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -20,64 +20,111 @@ _GEMINI_WS = (
     "wss://generativelanguage.googleapis.com/ws/"
     "google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent"
 )
+_AUTH_FRAME_MAX_BYTES = 16_384
+
+
+async def _close_safely(websocket: WebSocket, code: int, reason: str) -> None:
+    with contextlib.suppress(Exception):
+        await websocket.close(code=code, reason=reason)
+
+
+async def _authenticate_socket(client_ws: WebSocket, timeout_seconds: int):
+    try:
+        raw = await asyncio.wait_for(client_ws.receive_text(), timeout=timeout_seconds)
+        if len(raw.encode("utf-8")) > _AUTH_FRAME_MAX_BYTES:
+            raise ValueError("oversized authentication frame")
+        frame = json.loads(raw)
+        if not isinstance(frame, dict) or frame.get("type") != "auth":
+            raise ValueError("authentication frame required")
+        token = frame.get("accessToken")
+        if not isinstance(token, str) or not token:
+            raise ValueError("access token required")
+        return await authenticate_access_token(token)
+    except (TimeoutError, ValueError, WebSocketDisconnect, HTTPException):
+        await _close_safely(client_ws, 4401, "Authentication required")
+        return None
 
 
 @router.websocket("/ws/live")
 async def gemini_live_proxy(client_ws: WebSocket) -> None:
+    """Authenticate before opening Gemini, then enforce time/size/cost bounds."""
     await client_ws.accept()
     settings = get_settings()
-    if not settings.gemini_api_key:
-        await client_ws.close(code=1011, reason="GEMINI_API_KEY not configured")
+    user = await _authenticate_socket(client_ws, settings.live_auth_timeout_seconds)
+    if user is None:
         return
 
-    url = f"{_GEMINI_WS}?key={settings.gemini_api_key}"
+    admitted = False
     try:
-        async with websockets.connect(url, max_size=16 * 1024 * 1024) as gemini_ws:
-            logger.info("live: connected to Gemini")
+        try:
+            await admit_live_session(user.user_id, settings)
+            admitted = True
+        except LiveAdmissionError as exc:
+            await _close_safely(client_ws, 4429, str(exc))
+            return
 
-            counts = {"in": 0, "out": 0}
+        if not settings.gemini_api_key:
+            await _close_safely(client_ws, 1011, "Live service unavailable")
+            return
+
+        await client_ws.send_json({"type": "proxy_status", "status": "authenticated"})
+        url = f"{_GEMINI_WS}?key={settings.gemini_api_key}"
+        started = time.monotonic()
+        counts = {"in": 0, "out": 0}
+
+        async with websockets.connect(
+            url,
+            max_size=settings.live_max_message_bytes,
+            open_timeout=settings.provider_timeout_seconds,
+        ) as gemini_ws:
+            logger.info("live: authenticated upstream session started")
 
             async def forward_to_gemini() -> None:
-                try:
-                    while True:
-                        message = await client_ws.receive_text()
-                        counts["in"] += 1
-                        if counts["in"] <= 3:
-                            logger.info("live: phone->gemini #%d: %.100s", counts["in"], message)
-                        elif counts["in"] % 100 == 0:
-                            logger.info("live: phone->gemini count=%d", counts["in"])
-                        await gemini_ws.send(message)
-                except WebSocketDisconnect:
-                    pass
-                except Exception as exc:  # noqa: BLE001
-                    logger.info("live: client->gemini ended: %s", exc)
+                while True:
+                    remaining = settings.live_max_session_seconds - (time.monotonic() - started)
+                    if remaining <= 0:
+                        raise TimeoutError
+                    timeout = min(settings.live_idle_timeout_seconds, remaining)
+                    message = await asyncio.wait_for(client_ws.receive_text(), timeout=timeout)
+                    if len(message.encode("utf-8")) > settings.live_max_message_bytes:
+                        await _close_safely(client_ws, 1009, "Message too large")
+                        return
+                    counts["in"] += 1
+                    await gemini_ws.send(message)
 
             async def forward_to_client() -> None:
-                try:
-                    async for message in gemini_ws:
-                        counts["out"] += 1
-                        # Gemini sends JSON in BINARY frames. React Native's
-                        # WebSocket cannot read Blob payloads (no Blob.text()),
-                        # so always deliver to the phone as TEXT frames.
-                        if isinstance(message, bytes):
-                            message = message.decode("utf-8", errors="replace")
-                        if counts["out"] <= 3:
-                            logger.info("live: gemini->phone #%d: %.100s", counts["out"], message)
-                        await client_ws.send_text(message)
-                except Exception as exc:  # noqa: BLE001
-                    logger.info("live: gemini->client ended: %s", exc)
+                async for message in gemini_ws:
+                    if time.monotonic() - started >= settings.live_max_session_seconds:
+                        raise TimeoutError
+                    if isinstance(message, bytes):
+                        message = message.decode("utf-8", errors="replace")
+                    counts["out"] += 1
+                    await client_ws.send_text(message)
 
-            done, pending = await asyncio.wait(
-                [asyncio.create_task(forward_to_gemini()), asyncio.create_task(forward_to_client())],
-                return_when=asyncio.FIRST_COMPLETED,
-            )
+            tasks = {
+                asyncio.create_task(forward_to_gemini()),
+                asyncio.create_task(forward_to_client()),
+            }
+            done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
             for task in pending:
                 task.cancel()
-            logger.info("live: session ended — frames in=%d out=%d", counts["in"], counts["out"])
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("live: upstream connect failed: %s", exc)
+            for task in pending:
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+            for task in done:
+                with contextlib.suppress(WebSocketDisconnect, TimeoutError):
+                    task.result()
+            logger.info(
+                "live: authenticated session ended frames_in=%d frames_out=%d",
+                counts["in"],
+                counts["out"],
+            )
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        logger.warning("live: upstream session failed")
+        await _close_safely(client_ws, 1011, "Live service unavailable")
     finally:
-        try:
-            await client_ws.close()
-        except Exception:  # noqa: BLE001
-            pass
+        if admitted:
+            await live_connections.release(user.user_id)
+        await _close_safely(client_ws, 1000, "Session ended")

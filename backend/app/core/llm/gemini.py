@@ -32,7 +32,7 @@ async def _generate(parts: list[dict]) -> str:
         "Content-Type": "application/json",
     }
 
-    last_detail = ""
+    last_status = 0
     async with httpx.AsyncClient(timeout=60.0) as client:
         for attempt in range(_MAX_ATTEMPTS):
             resp = await client.post(url, headers=headers, json=payload)
@@ -44,13 +44,13 @@ async def _generate(parts: list[dict]) -> str:
                 out_parts = candidates[0].get("content", {}).get("parts", [])
                 return "".join(p.get("text", "") for p in out_parts).strip()
 
-            last_detail = f"{resp.status_code}: {resp.text[:200]}"
+            last_status = resp.status_code
             if resp.status_code in _RETRY_STATUSES and attempt < _MAX_ATTEMPTS - 1:
                 await asyncio.sleep(1.5 * (attempt + 1))  # 1.5s, 3s, 4.5s
                 continue
             break
 
-    raise RuntimeError(f"Gemini error ({last_detail})")
+    raise RuntimeError(f"Gemini request failed with status {last_status}")
 
 
 async def transcribe_audio(audio_bytes: bytes, mime_type: str) -> str:

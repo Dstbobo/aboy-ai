@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "status": "temporary-security-branch-acceptance",
+  "reviewBy": "2026-09-18",
+  "advisories": {
+    "GHSA-6vfc-qv3f-vr6c": {
+      "category": "runtime-mitigated",
+      "control": "Markdown input is capped below the advisory's 50K trigger size."
+    },
+    "GHSA-6v5v-wf23-fmfq": {
+      "category": "runtime-mitigated",
+      "control": "Typographer and the smartquotes core rule are disabled."
+    },
+    "GHSA-22p9-wv53-3rq4": {
+      "category": "runtime-mitigated-no-upstream-fix",
+      "control": "Linkification is disabled and input/render complexity is bounded."
+    },
+    "GHSA-v245-v573-v5vm": {
+      "category": "runtime-mitigated-no-upstream-fix",
+      "control": "Linkification is disabled and malicious mailto input is regression-tested."
+    },
+    "GHSA-w3rx-r6r6-pgpr": {
+      "category": "build-time-major-framework-upgrade",
+      "control": "image-size is reached through Metro build tooling, not the shipped app runtime."
+    },
+    "GHSA-5p2g-fcmc-qvqq": {
+      "category": "build-time-major-framework-upgrade",
+      "control": "image-size is reached through Metro build tooling, not the shipped app runtime."
+    },
+    "GHSA-qx2v-qp2m-jg93": {
+      "category": "build-time-major-framework-upgrade",
+      "control": "PostCSS is reached through Expo/Metro build tooling only."
+    },
+    "GHSA-6g55-p6wh-862q": {
+      "category": "build-time-major-framework-upgrade",
+      "control": "PostCSS processes repository-controlled build input only."
+    },
+    "GHSA-fxqj-rqcc-2cmp": {
+      "category": "build-time-major-framework-upgrade",
+      "control": "PostCSS processes repository-controlled build input only."
+    },
+    "GHSA-r28c-9q8g-f849": {
+      "category": "build-time-major-framework-upgrade",
+      "control": "PostCSS processes repository-controlled build input only."
+    },
+    "GHSA-w5hq-g745-h8pq": {
+      "category": "build-time-major-framework-upgrade",
+      "control": "uuid is reached through the xcode/config-plugin build path, not app runtime."
+    }
+  }
+}

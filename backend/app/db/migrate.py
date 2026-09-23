@@ -1,51 +1,37 @@
-"""
-Run pending SQL migrations against Supabase.
-Usage: python -m app.db.migrate
+"""Compatibility entry point for migration-bundle validation only.
+
+The former service-role `exec_sql` runner was incomplete and could bypass the
+approved staging process. It must never apply schema changes from application
+runtime credentials.
 """
 
-import asyncio
 import logging
 from pathlib import Path
 
-from app.db.supabase import get_db
-
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-MIGRATIONS_DIR = Path(__file__).parent / "migrations"
+
+def validate_migration_bundle() -> Path:
+    bundle = Path(__file__).resolve().parents[2] / "all_migrations.sql"
+    if not bundle.is_file():
+        raise RuntimeError("Canonical migration bundle is missing")
+    sql = bundle.read_text(encoding="utf-8")
+    if "-- 014:" not in sql or "guard_user_profile_privileges" not in sql:
+        raise RuntimeError("Canonical migration bundle is incomplete")
+    return bundle
 
 
 async def run_migrations() -> None:
-    db = await get_db()
-
-    await db.rpc("exec_sql", {
-        "sql": """
-        CREATE TABLE IF NOT EXISTS schema_migrations (
-            version TEXT PRIMARY KEY,
-            applied_at TIMESTAMPTZ DEFAULT NOW()
-        );
-        """
-    }).execute()
-
-    applied_result = await db.table("schema_migrations").select("version").execute()
-    applied = {row["version"] for row in (applied_result.data or [])}
-
-    migration_files = sorted(MIGRATIONS_DIR.glob("*.sql"))
-
-    for migration_file in migration_files:
-        version = migration_file.stem
-        if version in applied:
-            logger.info("  SKIP (applied): %s", version)
-            continue
-
-        sql = migration_file.read_text()
-        logger.info("  Applying: %s", version)
-        await db.rpc("exec_sql", {"sql": sql}).execute()
-        await db.table("schema_migrations").insert({"version": version}).execute()
-        logger.info("  ✓ Applied: %s", version)
-
-    logger.info("Migrations complete.")
+    validate_migration_bundle()
+    raise RuntimeError(
+        "Runtime migration execution is disabled; use the approved staging migration workflow"
+    )
 
 
 if __name__ == "__main__":
-    asyncio.run(run_migrations())
+    try:
+        path = validate_migration_bundle()
+        logger.info("migration bundle valid: %s", path.name)
+    except RuntimeError:
+        logger.error("migration bundle validation failed")
+        raise

@@ -1,5 +1,5 @@
 import pytest
-from app.core.llm.prompts import get_system_prompt, build_user_prompt, DEFAULT_PROMPT
+from app.core.llm.prompts import build_user_prompt, get_system_prompt
 
 
 def test_all_roles_have_prompts():
@@ -18,9 +18,11 @@ def test_student_prompt_no_clinical_directives():
     assert "prescribe" not in prompt.lower() or "never say" in prompt.lower()
 
 
-def test_unknown_role_falls_back_to_student():
+def test_unknown_role_falls_back_to_non_privileged_general_tone():
     prompt = get_system_prompt("unknown_role_xyz")
-    assert prompt == DEFAULT_PROMPT
+    assert "healthcare AI assistant" in prompt
+    assert "plain, accessible language" in prompt
+    assert "Citation integrity is mandatory" in prompt
 
 
 def test_build_user_prompt_includes_query():
